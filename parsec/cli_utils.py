@@ -111,8 +111,8 @@ def generate_not_available_cmd(exc, hint=None):
 
 
 async def aconfirm(*args, **kwargs):
-    await trio.to_thread.run_sync(partial(click.confirm, *args, **kwargs))
+    return await trio.to_thread.run_sync(partial(click.confirm, *args, **kwargs))
 
 
 async def aprompt(*args, **kwargs):
-    await trio.to_thread.run_sync(partial(click.prompt, *args, **kwargs))
+    return await trio.to_thread.run_sync(partial(click.prompt, *args, **kwargs))
