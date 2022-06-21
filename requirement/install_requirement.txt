@@ -1,4 +1,4 @@
-docutils==0.17.1
+docutils==0.18.1
 Babel==2.10.1
 certifi==2021.10.8
 attrs==21.4.0
