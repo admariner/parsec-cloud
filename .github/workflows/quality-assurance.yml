@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # pin v3.0.2
 
-      - uses: actions/setup-python@d09bd5e6005b175076f227b13d9730d56e9dcfcb  # pin v4.0.0
+      - uses: actions/setup-python@d27e3f3d7c64b4bbf8e4abfb9b63b83e846e0435  # pin v4.5.0
         with:
           python-version: ${{ env.python-version }}
 
