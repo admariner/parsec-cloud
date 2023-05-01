@@ -2003,14 +2003,14 @@ six = ">=1.5"
 
 [[package]]
 name = "python-swiftclient"
-version = "4.1.0"
+version = "4.3.0"
 description = "OpenStack Object Storage API Client Library"
 category = "main"
 optional = true
 python-versions = ">=3.6"
 files = [
-    {file = "python-swiftclient-4.1.0.tar.gz", hash = "sha256:f82298e4a48f7cbdd680f2638c85d1ca7ae1a76edbe30036d21b4cd7a29c09eb"},
-    {file = "python_swiftclient-4.1.0-py3-none-any.whl", hash = "sha256:4268219e158cd72c0b0751a6f27240da4eea7827485db765f5df9542da4cf144"},
+    {file = "python-swiftclient-4.3.0.tar.gz", hash = "sha256:1e3ddf998ccbea7dc25aa6df8eb3df7d38bf4bc96b065f2f84431e8259817b33"},
+    {file = "python_swiftclient-4.3.0-py3-none-any.whl", hash = "sha256:f88ff0d7d038a84872ac415a00df007d2a9078b73d8c5921fdc531e893378a89"},
 ]
 
 [package.dependencies]
