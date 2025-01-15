@@ -1,0 +1,34 @@
+[package]
+name = "libparsec_protocol"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+libparsec_types = { workspace = true }
+libparsec_serialization_format = { workspace = true }
+
+paste = { workspace = true }
+rand = { workspace = true, features = ["std", "std_rng"] }
+rmp-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true, features = ["std", "macros"] }
+thiserror = { workspace = true }
+futures = { workspace = true, features = ["std", "async-await", "executor"] }
+bytes = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+hex = { workspace = true }
+libparsec_tests_lite = { workspace = true }
+libparsec_tests_fixtures = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+
+[build-dependencies]
+glob = { workspace = true }

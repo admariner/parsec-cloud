@@ -1,0 +1,49 @@
+{
+    "name": "parsec",
+    "version": "3.2.4-a.0+dev",
+    "description": "Parsec.cloud",
+    "author": {
+        "name": "Scille SAS",
+        "email": "contact@scille.fr"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Scille/parsec-cloud"
+    },
+    "license": "BUSL-1.1",
+    "main": "build/src/index.js",
+    "scripts": {
+        "libparsec:copy": "node ./scripts/copy_bindings.js",
+        "build": "npm run libparsec:copy && tsc",
+        "electron:start-live": "npm run build && node ./live-runner.js",
+        "electron:start": "npm run build && electron --inspect=5858 ./",
+        "electron:release": "npm run build && node package.js --mode prod",
+        "electron:sign": "node package.js --mode prod --sign",
+        "sentry:sourcemaps": "sentry-cli sourcemaps inject --org scille --project parsec3-frontend ./build && sentry-cli sourcemaps upload --org scille --project parsec3-frontend ./build"
+    },
+    "dependencies": {
+        "@capacitor-community/electron": "^5.0.1",
+        "@sentry/electron": "^5.7.0",
+        "builder-util-runtime": "9.2.4",
+        "chokidar": "~3.6.0",
+        "electron-log": "^5.1.2",
+        "electron-serve": "~1.3.0",
+        "electron-unhandled": "~4.0.1",
+        "electron-updater": "6.3.0",
+        "electron-window-state": "~5.0.3",
+        "regedit": "^5.1.3"
+    },
+    "devDependencies": {
+        "@electron/notarize": "^2.5.0",
+        "@sentry/cli": "^2.33.1",
+        "axios": "^1.7.4",
+        "commander": "^12.0.0",
+        "electron": "^30.1.0",
+        "electron-builder": "~25.1.8",
+        "typescript": "~5.4.5"
+    },
+    "keywords": [
+        "capacitor",
+        "electron"
+    ]
+}

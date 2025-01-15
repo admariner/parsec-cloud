@@ -1,0 +1,30 @@
+[
+    {
+        "major_versions": [
+            4
+        ],
+        "req": {
+            "cmd": "pki_enrollment_reject",
+            "fields": [
+                {
+                    "name": "enrollment_id",
+                    "type": "EnrollmentID"
+                }
+            ]
+        },
+        "reps": [
+            {
+                "status": "ok"
+            },
+            {
+                "status": "author_not_allowed"
+            },
+            {
+                "status": "enrollment_not_found"
+            },
+            {
+                "status": "enrollment_no_longer_available"
+            }
+        ]
+    }
+]

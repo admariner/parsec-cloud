@@ -1,0 +1,39 @@
+{
+    "label": "FolderManifest",
+    "type": "folder_manifest",
+    "other_fields": [
+        {
+            "name": "author",
+            "type": "DeviceID"
+        },
+        {
+            "name": "timestamp",
+            "type": "DateTime"
+        },
+        {
+            "name": "id",
+            "type": "VlobID"
+        },
+        {
+            // In case of the root folder, `parent` and `id` fields must be equal
+            "name": "parent",
+            "type": "VlobID"
+        },
+        {
+            "name": "version",
+            "type": "Version"
+        },
+        {
+            "name": "created",
+            "type": "DateTime"
+        },
+        {
+            "name": "updated",
+            "type": "DateTime"
+        },
+        {
+            "name": "children",
+            "type": "Map<EntryName, VlobID>"
+        }
+    ]
+}

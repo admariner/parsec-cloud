@@ -1,0 +1,178 @@
+name: CI Web
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+# We set `concurrency` to prevent having this workflow being run on code that is not up-to-date on a PR (a user make multiple push in a quick manner).
+# But on the main branch, we don't want that behavior.
+# Having the workflow run on each merge commit is something we would like, that could help us where a regression was made and missed by previous checks.
+#
+# For that we use `head_ref` that is only defined on `pull-request` and fallback to `run_id` (this is a counter, so it's value is unique between workflow call).
+concurrency:
+  group: ci-web-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # We use the version 18.12 because the version >= 18.13 have some breaking changes on how they format the date.
+  # That would break our unit test if we don't update them.
+  node-version: 18.12.0
+  wasm-pack-version: 0.12.1
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test-web-app:
+    runs-on: ubuntu-22.04
+    name: 🌐 Web tests
+    # Just a fail-safe timeout, see the fine grain per-task timeout instead
+    timeout-minutes: 20
+    # Testbed server comes as a Docker image, so it will eventually goes out of sync
+    # with the tests (typically a new API is introduced in the Parsec server, or a new
+    # testbed template is introduced).
+    # In such case, the container url should be updated from the, see:
+    # https://github.com/Scille/parsec-cloud/pkgs/container/parsec-cloud%2Fparsec-testbed-server
+    services:
+      parsec-testbed-server:
+        image: ghcr.io/scille/parsec-cloud/parsec-testbed-server:3.2.4-a.0.dev.20102.1979660
+        ports:
+          - 6777:6777
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        timeout-minutes: 5
+
+      - name: Retrieve runner specs
+        id: runner-specs
+        uses: ./.github/actions/system-info
+        timeout-minutes: 1
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # pin v4.1.0
+        with:
+          node-version: ${{ env.node-version }}
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+        timeout-minutes: 2
+
+      - name: Install dependencies
+        shell: bash -o pipefail -ex {0}
+        run: |
+          # Execute 'npm install' until success,
+          # This is done that way because sometime some CDN respond with 503
+          until npm install --ignore-scripts; do
+            echo "Failed install, retrying ...";
+          done
+          # Failed if package-lock.json was modified
+          # This is done to ensure the lock file is up-to-date
+          test -z "$(git status --porcelain package-lock.json)"
+          # Prune dependencies present in `node_modules/` not listed in `package-lock.json`
+          # Likely older dependencies unlisted but still present in the cache
+          npm prune
+        working-directory: client
+        timeout-minutes: 5
+
+      - name: Check lint with eslint
+        run: npx eslint . --max-warnings=0
+        working-directory: client
+        timeout-minutes: 2
+
+      - name: Check lint with vue-tsc
+        run: npx vue-tsc --noEmit
+        working-directory: client
+        timeout-minutes: 2
+
+      - name: Check prettier
+        run: npx prettier . --check
+        working-directory: client
+        timeout-minutes: 5
+
+      - name: Setup cache-key
+        id: cache-key
+        run: >-
+          echo "key=web-${{ hashFiles(
+            'bindings/web/**',
+            'libparsec/**',
+            'rust-toolchain.toml',
+            'Cargo.lock'
+          ) }}-libparsec" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Restore libparsec if Rust hasn't been modified
+        id: cache-libparsec
+        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # pin v4.2.0
+        with:
+          key: ${{ steps.cache-key.outputs.key }}
+          path: |
+            bindings/web/pkg/
+            bindings/web/pkg/
+        timeout-minutes: 2
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # pin v1.10.1
+        if: steps.cache-libparsec.outputs.cache-hit != 'true'
+        with:
+          target: wasm32-unknown-unknown
+          # We setup the cache by hand, see below
+          cache: false
+        timeout-minutes: 5
+
+      - name: Retrieve Rust cache
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # pin v2.7.7
+        if: steps.cache-libparsec.outputs.cache-hit != 'true'
+        with:
+          # Cache is limited to 10Go (and cache is ~700mo per platform !). On top of that.
+          # cache is only shared between master and the PRs (and not across PRs).
+          # So we only save the cache on master build given it's the ones that are the
+          # most likely to be reused.
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+          key: ${{ steps.runner-specs.outputs.os }}-${{ steps.runner-specs.outputs.release }}
+        timeout-minutes: 5
+
+      # Install wasm-pack command
+      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # pin v2.47.11
+        with:
+          tool: wasm-pack@${{ env.wasm-pack-version }}
+
+      - name: Build web bindings
+        if: steps.cache-libparsec.outputs.cache-hit != 'true'
+        run: npm run build:dev
+        working-directory: bindings/web
+        timeout-minutes: 10
+
+      - name: Save libparsec to be reuse later
+        if: steps.cache-libparsec.outputs.cache-hit != 'true'
+        uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # pin v4.2.0
+        with:
+          key: ${{ steps.cache-key.outputs.key }}
+          path: |
+            bindings/web/pkg/
+            bindings/web/pkg/
+        timeout-minutes: 2
+
+      - name: Unit tests
+        run: npm run test:unit
+        working-directory: client
+        timeout-minutes: 10
+
+      - name: Check testbed server is running
+        run: curl http://localhost:6777
+
+      - name: Install Playwright dependencies
+        run: npx playwright install --with-deps
+        working-directory: client
+        timeout-minutes: 5
+
+      - name: E2E tests
+        run: npm run test:e2e:headless
+        env:
+          TESTBED_SERVER: parsec3://localhost:6777?no_ssl=true
+        working-directory: client
+        timeout-minutes: 20
+
+      - name: Archive test results
+        if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: playwright-artifacts
+          path: client/test-results/

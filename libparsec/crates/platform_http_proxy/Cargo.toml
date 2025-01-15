@@ -1,0 +1,21 @@
+[package]
+name = "libparsec_platform_http_proxy"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+libparsec_types = { workspace = true }
+
+reqwest = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Networking_WinHttp", "Win32_Foundation"] }
+widestring = { workspace = true, features = ["alloc"] }

@@ -1,58 +1,35 @@
-ci-workflow: &ci-workflow .github/workflows/ci.yml
+########
+# RUST #
+########
 
-rust-libparsec: &rust-libparsec oxidation/libparsec/**
+rust-libparsec: &rust-libparsec
+  - libparsec/**
 
+# Only list root Cargo files,
 rust-dependencies-workspace: &rust-dependencies-workspace
   - Cargo.toml
   - Cargo.lock
 
+rust-cargo-deny:
+  - deny.toml
+  - *rust-dependencies-workspace
+
 rust-toolchain: &rust-toolchain rust-toolchain.toml
 
-rust-python-binding: &rust-python-binding src/**
+rust-python-binding: &rust-python-binding
+  - server/src/**
+  - server/Cargo.toml
 
-# TODO: We currently don't test the electron application
-# So we don't have to watch the electron binding (likewise for the client code related to electron)
-# rust-electron-binding: &rust-electron-binding oxidation/bindings/electron
-# new-client-electron: &new-client-electron: oxidation/client/electron
+rust-web-binding: &rust-web-binding bindings/web/**
 
-# TODO: We currently don't test the android application
-# So we don't have to watch the android binding (likewise for the client code related to android)
-# rust-android-binding: &rust-android-binding oxidation/bindings/android
-# new-client-android: &new-client-android: oxidation/client/android
+rust-platform-crates: &rust-platform-crates libparsec/crates/platform_*/**
 
-# TODO: We currently don't test the ios application
-# So we don't have to watch the client code related to the ios application
-# new-client-ios: &new-client-ios oxidation/client/ios
+rust-cli: &rust-cli cli/**
 
-rust-web-binding: &rust-web-binding oxidation/bindings/web/**
-
-python: &python
-  - parsec/**
-  - tests/**
-  - make.py
-  - build.py
-
-python-dependencies-project: &python-dependencies-project
-  - pyproject.toml
-  - poetry.lock
-  - setup.cfg
-
-new-client-dependencies-project: &new-client-dependencies-project
-  - oxidation/client/*.ts
-  - oxidation/client/*.json
-  - oxidation/client/*.js
-  - oxidation/client/.browserslistrc
-  - oxidation/client/.env
-
-web: &web
-  - oxidation/client/public/**
-  - oxidation/client/resources/**
-  - oxidation/client/src/**
-  - oxidation/client/tests/**
-
-python-changes: &python-changes
-  - *python-dependencies-project
-  - *python
+rust-test-wasm: &rust-test-wasm
+  - *rust-platform-crates
+  - *rust-toolchain
+  - *rust-dependencies-workspace
 
 rust-changes: &rust-changes
   - *rust-dependencies-workspace
@@ -60,6 +37,38 @@ rust-changes: &rust-changes
   - *rust-toolchain
   - *rust-python-binding
   - *rust-web-binding
+  - *rust-cli
+
+# The rust jobs need to watch for:
+# - The change on the rust code.
+# - The change in the dependencies list.
+# - We change the toolchain
+# - We modify the Ci workflow
+rust-jobs:
+  - .github/workflows/ci-rust.yml
+  - *rust-changes
+
+##########
+# PYTHON #
+##########
+
+any-python-files: &any-python-files
+  - "**.py"
+
+python-server: &python-server
+  - server/parsec/**
+  - server/tests/**
+  - make.py
+  - server/build.py
+
+python-dependencies-project: &python-dependencies-project
+  - server/pyproject.toml
+  - server/poetry.lock
+  - server/setup.cfg
+
+python-changes: &python-changes
+  - *python-dependencies-project
+  - *python-server
 
 # The python jobs need to be run when:
 # - The ci workflow has changed
@@ -73,24 +82,45 @@ rust-changes: &rust-changes
 # > Note: We don't use `rust-changes` because it include all the change made to the rust code
 # > including change made to the ionic part.
 python-jobs:
-  - *ci-workflow
-  - .github/actions/setup-python-poetry/**
+  - .github/workflows/ci-python.yml
+  - .github/actions/**
   - *python-changes
   - *rust-dependencies-workspace
   - *rust-libparsec
   - *rust-toolchain
   - *rust-python-binding
 
+#########
+# IONIC #
+#########
 
-# The rust jobs need to watch for:
-# - The change on the rust code.
-# - The change in the dependencies list.
-# - We change the toolchain
-# - We modify the Ci workflow
-rust-jobs:
-  - *ci-workflow
-  - *rust-changes
+# TODO: We currently don't test the electron application
+# So we don't have to watch the electron binding (likewise for the client code related to electron)
+# rust-electron-binding: &rust-electron-binding bindings/electron
+# new-client-electron: &new-client-electron: /client/electron
 
+# TODO: We currently don't test the android application
+# So we don't have to watch the android binding (likewise for the client code related to android)
+# rust-android-binding: &rust-android-binding bindings/android
+# new-client-android: &new-client-android: /client/android
+
+# TODO: We currently don't test the ios application
+# So we don't have to watch the client code related to the ios application
+# new-client-ios: &new-client-ios /client/ios
+
+web: &web
+  - client/public/**
+  - client/resources/**
+  - client/src/**
+  - client/tests/**
+  - client/electron/**
+
+new-client-dependencies-project: &new-client-dependencies-project
+  - client/*.ts
+  - client/*.json
+  - client/*.js
+  - client/.browserslistrc
+  - client/.env
 
 # The web jobs need to be run when:
 # - The ci workflow has changed
@@ -103,10 +133,28 @@ rust-jobs:
 # > Note: We don't use `rust-changes` because it include all the change made to the rust code
 # > including change made to the python part.
 web-jobs:
-  - *ci-workflow
+  - .github/workflows/ci-web.yml
   - *rust-dependencies-workspace
   - *rust-libparsec
   - *rust-toolchain
   - *rust-web-binding
   - *new-client-dependencies-project
   - *web
+
+########
+# Docs #
+########
+
+docs-jobs:
+  - .github/workflows/ci-docs.yml
+  - docs/hosting/**
+  - docs/userguide/**
+  - docs/figures/**
+  - docs/_static/**
+  - docs/parsec*.png
+  - docs/locale/**.po
+  - docs/conf.py
+  - docs/pyproject.toml
+  - docs/poetry.lock
+  - docs/Makefile
+  - docs/**.rst

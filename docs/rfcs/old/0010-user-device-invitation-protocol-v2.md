@@ -1,3 +1,5 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
 # User/Device invitation protocol v2
 
 From [ISSUE-1037](https://github.com/Scille/parsec-cloud/issues/1037)
@@ -53,7 +55,7 @@ Transmit Asas as 7 digit
 User/Device pub key -->
  (Device pub key in case of Device invitation)
 
-                           Create User certificate & send it to backend
+                           Create User certificate & send it to server
                            <-- root public key
                               (+ user private key in case of Device invitation)
 ```

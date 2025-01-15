@@ -1,0 +1,27 @@
+[package]
+name = "libparsec_testbed"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+libparsec_types = { workspace = true, features = ["test-fixtures"] }
+
+hex-literal = { workspace = true }
+crc32fast = { workspace = true, features = ["std"] }
+# "rc" feature enables serialization of Arc<T>
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_with = { workspace = true }
+rmp-serde = { workspace = true }
+lazy_static = { workspace = true }
+reqwest = { workspace = true, features = ["default-tls"] }
+regex = { workspace = true, features = ["std", "perf", "unicode"] }
+log = { workspace = true }
+paste = { workspace = true }

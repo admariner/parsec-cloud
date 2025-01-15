@@ -1,0 +1,22 @@
+/* Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS */
+
+/* **** Parsec tags **** */
+
+.profile {
+  pointer-events: none;
+
+  .admin {
+    background-color: var(--parsec-color-tags-indigo-50);
+    color: var(--parsec-color-tags-indigo-700);
+  }
+
+  .standard {
+    background-color: var(--parsec-color-tags-blue-50);
+    color: var(--parsec-color-tags-blue-700);
+  }
+
+  .outsider {
+    background-color: var(--parsec-color-tags-orange-50);
+    color: var(--parsec-color-tags-orange-700);
+  }
+}

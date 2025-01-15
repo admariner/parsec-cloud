@@ -1,0 +1,197 @@
+[
+    {
+        "major_versions": [
+            4
+        ],
+        "req": {
+            "cmd": "events_listen",
+            // No `wait` param as this API is only meant to be used from SSE
+            "fields": []
+        },
+        "reps": [
+            {
+                "status": "ok",
+                "unit": "APIEvent"
+            },
+            {
+                // Returned if the command is used through the regular rpc route
+                // instead of the SSE one
+                "status": "not_available"
+            }
+        ],
+        "nested_types": [
+            {
+                "name": "APIEvent",
+                "discriminant_field": "event",
+                "variants": [
+                    {
+                        "name": "Pinged",
+                        "discriminant_value": "PINGED",
+                        "fields": [
+                            {
+                                "name": "ping",
+                                "type": "String"
+                            }
+                        ]
+                    },
+                    {
+                        // This event is always fired first upon SSE connection
+                        "name": "ServerConfig",
+                        "discriminant_value": "SERVER_CONFIG",
+                        "fields": [
+                            {
+                                "name": "user_profile_outsider_allowed",
+                                "type": "Boolean"
+                            },
+                            {
+                                "name": "active_users_limit",
+                                "type": "ActiveUsersLimit"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Invitation",
+                        "discriminant_value": "INVITATION",
+                        "fields": [
+                            {
+                                "name": "token",
+                                "type": "InvitationToken"
+                            },
+                            {
+                                "name": "invitation_status",
+                                "type": "InvitationStatus"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "PkiEnrollment",
+                        "discriminant_value": "PKI_ENROLLMENT"
+                    },
+                    // It would be easy to provide the content of the certificate here,
+                    // however correctly integrating it on client side is tricky given
+                    // it would act in concurrency with the regular use of `certificate_get`
+                    // command.
+                    //
+                    // Consider the following scenario:
+                    // 1) client sends a `certificate_get` command to server
+                    // 2) server sends a `certificates` event to client for
+                    //    certificate C3
+                    // 3) client adds C3 to its certificates store
+                    // 4) server sends the response to `certificate_get`: certificates
+                    //    C1 and C2 should be added by the client
+                    // 5) client detects a causality issue given C1 & C2 are older than
+                    //    C3 which is already stored !
+                    //
+                    // In a nutshell, the server guarantees causality on the order it
+                    // provides the certificates and the client rely on this assumption
+                    // (e.g. to determine an user realm role at a given point in time).
+                    // So the best way to avoid messing with this is to always rely on
+                    // `certificate_get` everytime we detect we need to fetch new stuff.
+                    {
+                        "name": "CommonCertificate",
+                        "discriminant_value": "COMMON_CERTIFICATE",
+                        "fields": [
+                            {
+                                // Timestamp is useful to detect we have already polled the
+                                // server for new certificates since this event's inception
+                                "name": "timestamp",
+                                "type": "DateTime"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "SequesterCertificate",
+                        "discriminant_value": "SEQUESTER_CERTIFICATE",
+                        "fields": [
+                            {
+                                // Timestamp is useful to detect we have already polled the
+                                // server for new certificates since this event's inception
+                                "name": "timestamp",
+                                "type": "DateTime"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "ShamirRecoveryCertificate",
+                        "discriminant_value": "SHAMIR_RECOVERY_CERTIFICATE",
+                        "fields": [
+                            {
+                                // Timestamp is useful to detect we have already polled the
+                                // server for new certificates since this event's inception
+                                "name": "timestamp",
+                                "type": "DateTime"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "RealmCertificate",
+                        "discriminant_value": "REALM_CERTIFICATE",
+                        "fields": [
+                            {
+                                // Timestamp is useful to detect we have already polled the
+                                // server for new certificates since this event's inception
+                                "name": "timestamp",
+                                "type": "DateTime"
+                            },
+                            {
+                                "name": "realm_id",
+                                "type": "VlobID"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Vlob",
+                        "discriminant_value": "VLOB",
+                       // Unlike for `XXXCertificate`, we provide enough context
+                       // to process the event without any additional query to the server.
+                       // This is because vlob related operations are designed to work
+                       // under concurrency (unlike certificates related operations that
+                       // work in a strict ordered fashion).
+                       // In other words, considering two vlob modifications:
+                       // - two different vlobs are modified, it is fine to fetch the
+                       //   changes in any order
+                       // - the same vlob has been modified twice, it is fine to fetch
+                       //   the change twice (idempotent operation)
+                        "fields": [
+                            {
+                                "name": "realm_id",
+                                "type": "VlobID"
+                            },
+                            {
+                                "name": "vlob_id",
+                                "type": "VlobID"
+                            },
+                            {
+                                "name": "author",
+                                "type": "DeviceID"
+                            },
+                            {
+                                "name": "timestamp",
+                                "type": "DateTime"
+                            },
+                            {
+                                "name": "version",
+                                "type": "Version"
+                            },
+                            {
+                                // Blob is only provided if it is small enough
+                                "name": "blob",
+                                "type": "RequiredOption<Bytes>"
+                            },
+                            // The vlob requires common&realm certificates for validation,
+                            // those fields help the client ensure it isn't missing some.
+                            {
+                                "name": "last_common_certificate_timestamp",
+                                "type": "DateTime"
+                            },
+                            {
+                                "name": "last_realm_certificate_timestamp",
+                                "type": "DateTime"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

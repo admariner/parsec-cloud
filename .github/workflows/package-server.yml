@@ -1,0 +1,127 @@
+name: package-server
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version to use
+        type: string
+        required: true
+      version_patch_run_id:
+        description: |
+          The run id where the version.patch artifact was uploaded.
+          If not provided, the workflow will generate the patch by itself.
+        type: string
+        required: true
+      commit_sha:
+        required: true
+        type: string
+        description: The commit SHA to use when checkout'ing the repository
+        default: ${{ github.sha }}
+  # PS: If you trigger manually the packaging, take into account that it will use the workflow as defined in the main branch not in the target branch.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to use (if not provided will generated one from the code space version)
+        type: string
+        required: false
+  pull_request:
+    paths:
+      - .github/workflows/package-server.yml
+      - server/packaging
+      - server/build.py
+      - server/pyproject.toml
+
+# We set `concurrency` to prevent having this workflow being run on code that is not up-to-date on a PR (a user make multiple push in a quick manner).
+# But on the main branch, we don't want that behavior.
+# Having the workflow run on each merge commit is something we would like, that could help us where a regression was made and missed by previous checks.
+#
+# For that we use `head_ref` that is only defined on `pull-request` and fallback to `run_id` (this is a counter, so it's value is unique between workflow call).
+concurrency:
+  group: package-server-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  node-version: 18.12.0
+  poetry-version: 1.5.1
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    if: ${{ inputs.version_patch_run_id == '' }}
+    uses: ./.github/workflows/_parse_version.yml
+    with:
+      version: ${{ inputs.version }}
+      commit_sha: ${{ inputs.commit_sha }}
+
+  package-wheel:
+    needs: version
+    # Always run the job if `version` job is skipped otherwise only if `version` job was successful.
+    if: ${{ inputs.version_patch_run_id != '' && always() || success() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 🐧 Linux
+            platform: linux
+            os: ubuntu-22.04
+          - name: 🍎 macOS
+            platform: macos
+            os: macos-13
+          - name: 🏁 Windows
+            platform: windows
+            os: windows-2022
+    name: "${{ matrix.name }}: 📦 Packaging (build Wheel)"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+        timeout-minutes: 5
+
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          poetry-version: ${{ env.poetry-version }}
+          project-path: ./server
+        timeout-minutes: 10
+
+      - name: Download version.patch artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # pin v4.1.8
+        with:
+          name: version.patch
+          path: ${{ runner.temp }}/version.patch
+          run-id: ${{ inputs.version_patch_run_id || github.run_id }}
+
+      - name: Apply version.patch
+        run: git apply --allow-empty ${{ runner.temp }}/version.patch/version.patch
+
+      - name: Build wheel
+        uses: pypa/cibuildwheel@ee63bf16da6cddfb925f542f2c7b59ad50e93969  # pin v2.22.0
+        with:
+          package-dir: server
+          output-dir: dist
+        timeout-minutes: 50
+
+      - name: Set file for wheel version
+        run: cp -v libparsec/version dist/version
+
+      - name: Generate requirements & constraints infos
+        run: python server/packaging/wheel/wheel_it.py ./server --output dist --skip-wheel
+
+      # Install syft
+      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # pin v2.47.11
+        with:
+          tool: syft@0.84.0
+
+      - name: Generate SBOM
+        run: syft packages --config=.syft.yaml --output=spdx-json=dist/Parsec-SBOM-Wheel-${{ matrix.platform }}.spdx.json .
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: ${{ runner.os }}-${{ runner.arch }}-wheel
+          path: |
+            dist/
+          if-no-files-found: error
+        timeout-minutes: 5

@@ -18,6 +18,9 @@ dictionaryDefinitions:
   - name: custom-ext
     path: ./custom-ext.txt
     addWords: true
+  - name: jinja
+    path: ./jinja.txt
+    addWords: true
 dictionaries:
   - en_us
   - en-gb
@@ -42,6 +45,7 @@ dictionaries:
   - typescript
   - sql
   - win32
+  - jinja
 words:
   - libparsec
   - schemafile
@@ -51,8 +55,10 @@ words:
 ignoreWords:
   - ABCDEFGHJKLMNPQRSTUVWXYZ
   - Aaaaaand
+  - AIAA
   - ApiV
   - Assss
+  - devel
   - Crefreshiconhandler
   - Cwindowsiconhandler
   - DWXJ
@@ -79,7 +85,6 @@ ignoreWords:
   - ZGIQ
   - ZOXKGGIMTY
   - abcefg
-  - abcefg
   - ackup
   - csdef
   - dbmdl
@@ -93,7 +98,6 @@ ignoreWords:
   - ipch
   - ipdb
   - jmconfig
-  - mnpcod
   - mnpcod
   - ntvs
   - nunit
@@ -112,18 +116,25 @@ cache:
   cacheStrategy: metadata
   useCache: true
 useGitignore: true
-allowCompoundWords: true
+allowCompoundWords: false
 ignorePaths:
-  - '**/parsec/core/resources/default_*.ignore'
-  - '**/*.svg'
-  - '**/docs/figures/*.svg'
-  - '**/windows-icon-handler/**/*.vcxproj'
-  - '**/windows-icon-handler/**/*.vcxproj.filters'
-  - '**/gradle.lockfile'
-  - '**/buildscript-gradle.lockfile'
-  - '**/gradle/verification-metadata.xml'
-  - '**/*.icns'
-  - '**/.git'
+  # Cspell seems to match against the absolute path, so must always start with `**/` :(
+  - "**/bindings/web/src/meths.rs"
+  - "**/bindings/electron/src/meths.rs"
+  - "**/*.svg"
+  - "**/*.excalidraw"
+  - "**/default_pattern.ignore"
+  - "**/docs/figures/*.svg"
+  - "**/windows-icon-handler/**/*.vcxproj"
+  - "**/windows-icon-handler/**/*.vcxproj.filters"
+  - "**/gradle.lockfile"
+  - "**/buildscript-gradle.lockfile"
+  - "**/gradle/verification-metadata.xml"
+  - "**/*.icns"
+  - "**/.git"
+  - "**/client/.env.*"
+  - "**/client/tests/unit/data"
+  - "**/client/tests/e2e/data"
 import:
   - "@cspell/dict-fr-fr/cspell-ext.json"
   - "@cspell/dict-fr-reforme/cspell-ext.json"

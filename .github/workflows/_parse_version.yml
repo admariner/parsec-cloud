@@ -1,0 +1,117 @@
+name: Parse Version
+
+on:
+  pull_request:
+    paths:
+      - misc/releaser.py
+      - misc/version_updater.py
+      - .github/workflows/_parse_version.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to parse (will generate a new one if empty)
+        required: false
+        type: string
+        default: ""
+      commit_sha:
+        description: The commit SHA to use when checkout'ing the repository
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+        description: The version to parse (will generate a new one if empty)
+      commit_sha:
+        required: true
+        type: string
+        description: The commit SHA to use when checkout'ing the repository
+        default: ${{ github.sha }}
+    outputs:
+      full:
+        description: The full version
+        value: ${{ jobs.parse.outputs.full }}
+      pep440:
+        description: The PEP 440 version
+        value: ${{ jobs.parse.outputs.pep440 }}
+      major:
+        description: The major version
+        value: ${{ jobs.parse.outputs.major }}
+      minor:
+        description: The minor version
+        value: ${{ jobs.parse.outputs.minor }}
+      patch:
+        description: The patch version
+        value: ${{ jobs.parse.outputs.patch }}
+      pre:
+        description: The pre-release version
+        value: ${{ jobs.parse.outputs.pre }}
+      dev:
+        description: The dev version
+        value: ${{ jobs.parse.outputs.dev }}
+      local:
+        description: The local version
+        value: ${{ jobs.parse.outputs.local }}
+      no_local:
+        description: The full version without the local part
+        value: ${{ jobs.parse.outputs.no_local }}
+      commit_sha:
+        description: The commit SHA used to checkout the repository
+        value: ${{ inputs.commit_sha }}
+      type:
+        description: The type of version
+        value: ${{ jobs.parse.outputs.type }}
+
+jobs:
+  parse:
+    name: Parse Version
+    runs-on: ubuntu-22.04
+    outputs:
+      full: ${{ steps.version.outputs.full }}
+      pep440: ${{ steps.version.outputs.pep440 }}
+      major: ${{ steps.version.outputs.major }}
+      minor: ${{ steps.version.outputs.minor }}
+      patch: ${{ steps.version.outputs.patch }}
+      pre: ${{ steps.version.outputs.prerelease }}
+      dev: ${{ steps.version.outputs.dev }}
+      local: ${{ steps.version.outputs.local }}
+      no_local: ${{ steps.version.outputs.no_local }}
+      type: ${{ steps.version.outputs.type }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+        timeout-minutes: 5
+
+      - name: Install python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # pin v5.3.0
+        id: setup-python
+        with:
+          python-version: 3.12
+
+      - name: Parse Version
+        id: version
+        shell: bash
+        run: >-
+          python misc/releaser.py version "${{ inputs.version || '--uniq-dev' }}"
+          | tee ${{ runner.temp }}/version.ini "$GITHUB_OUTPUT"
+        timeout-minutes: 2
+
+      - name: Set version for patching
+        run: python misc/version_updater.py --tool parsec --version ${{ steps.version.outputs.full }}
+        timeout-minutes: 2
+
+      - name: Generate git patch
+        run: git diff | tee ${{ runner.temp }}/version.patch
+        timeout-minutes: 2
+
+      - name: Upload patch
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: version.patch
+          path: |
+            ${{ runner.temp }}/version.patch
+            ${{ runner.temp }}/version.ini
+          if-no-files-found: error
+          retention-days: 1

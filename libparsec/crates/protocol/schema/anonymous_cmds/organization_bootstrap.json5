@@ -1,0 +1,82 @@
+[
+    {
+        "major_versions": [
+            4
+        ],
+        "req": {
+            "cmd": "organization_bootstrap",
+            "fields": [
+                {
+                    // Set to `None` for spontaneous bootstrap (i.e. the organization
+                    // hasn't been created prior to the bootstrap)
+                    "name": "bootstrap_token",
+                    "type": "RequiredOption<BootstrapToken>"
+                },
+                {
+                    "name": "root_verify_key",
+                    "type": "VerifyKey"
+                },
+                {
+                    "name": "user_certificate",
+                    "type": "Bytes"
+                },
+                {
+                    "name": "device_certificate",
+                    "type": "Bytes"
+                },
+                // Same certificates than above, but expunged of human_handle
+                {
+                    "name": "redacted_user_certificate",
+                    "type": "Bytes"
+                },
+                // Same certificates than above, but expunged of device_label
+                {
+                    "name": "redacted_device_certificate",
+                    "type": "Bytes"
+                },
+                // Set to `None` for sequester disabled
+                // Note there is absolutely no way to change this later as this certif must
+                // be signed by the root key which has been destroyed after bootstrap
+                {
+                    "name": "sequester_authority_certificate",
+                    "type": "RequiredOption<Bytes>"
+                }
+            ]
+        },
+        "reps": [
+            {
+                "status": "ok"
+            },
+            {
+                "status": "invalid_certificate"
+            },
+            {
+                "status": "organization_already_bootstrapped"
+            },
+            {
+                "status": "invalid_bootstrap_token"
+            },
+            {
+                "status": "timestamp_out_of_ballpark",
+                "fields": [
+                    {
+                        "name": "ballpark_client_early_offset",
+                        "type": "Float"
+                    },
+                    {
+                        "name": "ballpark_client_late_offset",
+                        "type": "Float"
+                    },
+                    {
+                        "name": "server_timestamp",
+                        "type": "DateTime"
+                    },
+                    {
+                        "name": "client_timestamp",
+                        "type": "DateTime"
+                    }
+                ]
+            }
+        ]
+    }
+]

@@ -1,0 +1,57 @@
+[package]
+name = "libparsec_client_connection"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+test-with-testbed = ["libparsec_testbed"]
+
+[dependencies]
+libparsec_crypto = { workspace = true }
+# Add primitive type to be used with the protocol
+libparsec_types = { workspace = true }
+libparsec_protocol = { workspace = true }
+libparsec_testbed = { workspace = true, optional = true }
+libparsec_platform_http_proxy = { workspace = true }
+libparsec_platform_async = { workspace = true }
+
+eventsource-stream = { workspace = true, features = ["std"] }
+# Used to send HTTP request to the server.
+# Note reqwest default to using the native SSL implementation.
+# When packing the application there is nothing special for Windows/MacOS,
+# on Linux however we have to specify our snap depends on the openssl package.
+reqwest = { workspace = true, features = ["stream"] }
+futures = { workspace = true }
+# Use abstract crypto primitive, to allow to sign request.
+# Used to encoded binary data.
+data-encoding = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+# Reqwest's response body is returned as Bytes
+bytes = { workspace = true, features = ["std"] }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# TODO: support SSE for Web
+reqwest-eventsource = { workspace = true }
+# On web TLS is not available it is the responsibility of the browser
+reqwest = { workspace = true, features = ["native-tls"] }
+
+[dev-dependencies]
+libparsec_tests_lite = { workspace = true }
+# Note `libparsec_tests_fixtures` enables our `test-with-testbed` feature
+libparsec_tests_fixtures = { workspace = true, features = ["test-with-client-connection-testbed"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Needed by proxy server used for testing SSE
+tokio = { workspace = true, features = ["net"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }

@@ -1,0 +1,107 @@
+{
+    "label": "LocalUserManifest",
+    "type": "local_user_manifest",
+    "other_fields": [
+        {
+            "name": "base",
+            "type": "UserManifest"
+        },
+        {
+            "name": "need_sync",
+            "type": "Boolean"
+        },
+        {
+            "name": "updated",
+            "type": "DateTime"
+        },
+        {
+            // This field is used to store the name of the realm:
+            // - When the realm got created, its name is stored here until the initial
+            //   `RealmNameCertificate` is uploaded (which can take time, e.g. if the
+            //   client is offline).
+            // - After that, to access the workspace name even when the client is offline (given
+            //   `RealmNameCertificate` contains the name encrypted, but the decryption key
+            //   must be fetched by `realm_get_keys_bundle` (which cannot be done while offline).
+            "name": "local_workspaces",
+            "type": "List<LocalUserManifestWorkspaceEntry>"
+        },
+        {
+            // Speculative placeholders are created when we want to access the
+            // user manifest but didn't retrieve it from server yet. This implies:
+            // - Non-placeholders cannot be speculative.
+            // - The only non-speculative placeholder is the placeholder initialized
+            //   during the initial user claim (by opposition of subsequent device
+            //   claims on the same user).
+            // This speculative information is useful during merge to understand if
+            // a data is not present in the placeholder compared with a remote because:
+            // a) The data is not locally known (speculative is True).
+            // b) The data is known, but has been locally removed (speculative is False).
+            "name": "speculative",
+            "type": "Boolean"
+        }
+    ],
+    "nested_types": [
+        {
+            "name": "CertificateBasedInfoOrigin",
+            "discriminant_field": "type",
+            "variants": [
+                // Info comes from a certificate, this is the eventually consistent outcome.
+                {
+                    "name": "Certificate",
+                    "discriminant_value": "CERTIFICATE",
+                    "fields": [
+                        {
+                            // Timestamp of the certificate that contains the info.
+                            "name": "timestamp",
+                            "type": "DateTime"
+                        }
+                    ]
+                },
+                // Workspace has no certificate for this info that we are aware yet.
+                //
+                // The most likely reason for this is that the workspace has just been created locally.
+                //
+                // If the info is the realm's name, another reason is that the workspace has been
+                // shared with us before it has a realm name certificate.
+                // This is very unlikely though given the server should ensure the workspace is
+                // fully bootstrapped (i.e. has a realm name certificate) before sharing it.
+                //
+                // In any case, this is a temporary state and the eventual outcomes are:
+                // - A realm certificate is fetched and its info overwrites the placeholder.
+                // - We are the ones uploading the initial info certificate, in which case
+                //   the placeholder will become the official info.
+                {
+                    "name": "Placeholder",
+                    "discriminant_value": "PLACEHOLDER"
+                }
+            ]
+        },
+        {
+            "name": "LocalUserManifestWorkspaceEntry",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "VlobID"
+                },
+                {
+                    "name": "name",
+                    "type": "EntryName"
+                },
+                {
+                    "name": "name_origin",
+                    "type": "CertificateBasedInfoOrigin"
+                },
+                {
+                    "name": "role",
+                    // Note `None` is not allowed, as the entry will simply be removed if the
+                    // workspace is no longer shared with us.
+                    "type": "RealmRole"
+                },
+                {
+                    "name": "role_origin",
+                    "type": "CertificateBasedInfoOrigin"
+                }
+            ]
+        }
+    ]
+}

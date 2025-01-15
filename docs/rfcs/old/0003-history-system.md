@@ -1,3 +1,5 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
 # History system
 
 From [ISSUE-129](https://github.com/Scille/parsec-cloud/issues/129)
@@ -21,7 +23,7 @@ Restaurer un fichier/répertoire
 
 - fuse support
   - fuse component can hot-swap FS class
-  - HistoryFS wrap regular FS with statemachine for date, read only mode
-- backend api
+  - HistoryFS wrap regular FS with state machine for date, read only mode
+- server api
   - allow date based request
   - allow list vlob versions + pagination retrieval ?

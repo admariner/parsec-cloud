@@ -1,0 +1,46 @@
+{
+    "label": "UserCertificate",
+    "type": "user_certificate",
+    "other_fields": [
+        {
+            "name": "author",
+            "type": "CertificateSignerOwned"
+        },
+        {
+            "name": "timestamp",
+            "type": "DateTime"
+        },
+        {
+            "name": "user_id",
+            "type": "UserID"
+        },
+        {
+            // None in case of redacted certificate
+            "name": "human_handle",
+            "type": "RequiredOption<HumanHandle>"
+        },
+        {
+            "name": "public_key",
+            "type": "PublicKey"
+        },
+        {
+            "name": "algorithm",
+            "type": "PrivateKeyAlgorithm"
+        },
+        {
+            "name": "profile",
+            "type": "UserProfile"
+        }
+    ],
+    "nested_types": [
+        {
+            "name": "PrivateKeyAlgorithm",
+            "variants": [
+                {
+                    "name": "X25519XSalsa20Poly1305",
+                    "discriminant_value": "X25519_XSALSA20_POLY1305"
+                }
+            ]
+        }
+    ]
+}

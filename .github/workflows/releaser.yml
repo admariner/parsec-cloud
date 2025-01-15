@@ -1,0 +1,269 @@
+# When a tag is push on the repo, this workflow will run to create a release and add some artifact to it.
+name: Releaser
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/package-server.yml
+      - .github/workflows/releaser.yml
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+*
+      - nightly
+  schedule:
+    - cron: 30 22 * * * # At 22:30
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+# We set `concurrency` to prevent having this workflow being more than once for the same tag.
+concurrency:
+  group: releaser-${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  NIGHTLY_RELEASE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/tags/nightly') && 'true' || 'false' }}
+
+jobs:
+  scheduled-nightly-build:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/_releaser_nightly_build.yml
+
+  version:
+    needs: scheduled-nightly-build
+    # Always run the job if `scheduled-nightly-build` job is skipped otherwise only if `scheduled-nightly-build` job was successful.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && always() || success()
+    uses: ./.github/workflows/_parse_version.yml
+    with:
+      version: >-
+        ${{
+          ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.scheduled-nightly-build.outputs.version_full) ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && github.ref_name != 'nightly' && github.ref_name) ||
+          ''
+        }}
+      commit_sha: ${{ needs.scheduled-nightly-build.outputs.commit_sha || github.sha }}
+
+  package-parsec-server:
+    needs: version
+    if: needs.version.result == 'success' && always()
+    uses: ./.github/workflows/package-server.yml
+    with:
+      version: ${{ needs.version.outputs.full }}
+      version_patch_run_id: ${{ github.run_id }}
+      commit_sha: ${{ needs.version.outputs.commit_sha }}
+
+  package-parsec-client:
+    needs: version
+    # Do not run this job if the event is a pull request from dependabot.
+    if: needs.version.result == 'success' && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]') && always()
+    uses: ./.github/workflows/package-client.yml
+    with:
+      version: ${{ needs.version.outputs.full }}
+      version_patch_run_id: ${{ github.run_id }}
+      commit_sha: ${{ needs.version.outputs.commit_sha }}
+      nightly_build: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/tags/nightly' }}
+    secrets:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      MACOS_CI_KEYCHAIN_PASSWD: ${{ secrets.MACOS_CI_KEYCHAIN_PASSWD }}
+      MACOS_CERT_PASSWD: ${{ secrets.MACOS_CERT_PASSWD }}
+      MACOS_CERT: ${{ secrets.MACOS_CERT }}
+      MACOS_CERT_COMMON_NAME: ${{ secrets.MACOS_CERT_COMMON_NAME }}
+      MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+      MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+      MACOS_NOTARIZATION_PASSWD: ${{ secrets.MACOS_NOTARIZATION_PASSWD }}
+
+  package-parsec-cli:
+    needs: version
+    if: needs.version.result == 'success' && always()
+    uses: ./.github/workflows/package-cli.yml
+    with:
+      version: ${{ needs.version.outputs.full }}
+      version_patch_run_id: ${{ github.run_id }}
+      commit_sha: ${{ needs.version.outputs.commit_sha }}
+
+  releaser:
+    needs:
+      - version
+      - package-parsec-server
+      - package-parsec-client
+      - package-parsec-cli
+    name: 🚛 Releaser
+    permissions:
+      contents: write
+    if: needs.version.result == 'success' && needs.package-parsec-client.result == 'success' && needs.package-parsec-server.result && always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download every artifact generated (and uploaded)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # pin v4.1.8
+        with:
+          path: artifacts
+        timeout-minutes: 5
+
+      - name: List downloaded artifacts
+        run: tree artifacts
+
+      - name: Create the folder that will contain the release files
+        run: mkdir release-files
+
+      - name: Copy artifacts to the release folder
+        run: |
+          set -ex
+          # Python Files
+          cp ${CP_ARGS} artifacts/Linux-X64-wheel/parsec_cloud-${{ needs.version.outputs.pep440 }}-*.whl release-files
+          cp ${CP_ARGS} artifacts/Linux-X64-wheel/requirements.txt release-files/python-linux-requirements.txt
+          cp ${CP_ARGS} artifacts/macOS-X64-wheel/parsec_cloud-${{ needs.version.outputs.pep440 }}-*.whl release-files
+          cp ${CP_ARGS} artifacts/macOS-X64-wheel/requirements.txt release-files/python-macos-requirements.txt
+          cp ${CP_ARGS} artifacts/Windows-X64-wheel/parsec_cloud-${{ needs.version.outputs.pep440 }}-*.whl release-files
+          cp ${CP_ARGS} artifacts/Windows-X64-wheel/requirements.txt release-files/python-win-requirements.txt
+
+          # Snapcraft
+          cp ${CP_ARGS} artifacts/linux-snap-X64-electron/Parsec_${{ needs.version.outputs.full }}_linux_*.snap release-files
+
+          # AppImage
+          cp ${CP_ARGS} artifacts/linux-appimage-X64-electron/Parsec_${{ needs.version.outputs.full }}_linux_*.AppImage release-files
+          cp ${CP_ARGS} artifacts/linux-appimage-X64-electron/latest-linux-*.yml release-files
+
+          # DMG & ZIP
+          cp ${CP_ARGS} artifacts/macos-dmg-X64-electron/Parsec_${{ needs.version.outputs.full }}_mac_*.{dmg,zip}{,.blockmap} release-files
+          cp ${CP_ARGS} artifacts/macos-dmg-X64-electron/latest-mac-*.yml release-files
+
+          # TODO: Currently, Windows electron client is not signed by the CI, thus
+          # it should not be uploaded when creating the draft release.
+          # These artifacts are uploaded manually by someone who is able to sign them.
+          # # EXE
+          # cp ${CP_ARGS} artifacts/windows-exe-X64-electron/Parsec_${{ needs.version.outputs.full }}_win_*.unsigned.exe{,.blockmap} release-files
+          # cp ${CP_ARGS} artifacts/windows-exe-X64-electron/latest-win-*.yml release-files
+
+          # CLI
+          cp ${CP_ARGS} artifacts/Linux-x86_64-unknown-linux-gnu-cli/parsec-cli_${{ needs.version.outputs.full }}_linux-x86_64-gnu release-files
+          cp ${CP_ARGS} artifacts/Linux-x86_64-unknown-linux-musl-cli/parsec-cli_${{ needs.version.outputs.full }}_linux-x86_64-musl release-files
+        env:
+          # TODO: Current version of cp don't support `--update` with argument,
+          # recent version (coreutils-9.5) allows for `none-fail` that make `cp` fail if it would have overwritten a file.
+          CP_ARGS: -v --no-clobber
+          BASH_XTRACEFD: 1
+
+      - name: Copy SBOM files
+        run: cp -v artifacts/**/Parsec-SBOM-*.spdx.json release-files
+
+      - name: Generate version file
+        run:
+          (
+            echo "full=${{ needs.version.outputs.full }}";
+            echo "pep440=${{ needs.version.outputs.pep440 }}";
+            echo "major=${{ needs.version.outputs.major }}";
+            echo "minor=${{ needs.version.outputs.minor }}";
+            echo "patch=${{ needs.version.outputs.patch }}";
+            echo "pre=${{ needs.version.outputs.pre }}";
+            echo "dev=${{ needs.version.outputs.dev }}";
+            echo "local=${{ needs.version.outputs.local }}";
+          ) | tee release-files/version
+
+      - name: Generate checksums file released files
+        run: sha256sum release-files/* | sed 's;release-files/;;' | tee checksums.sha256
+
+      - name: Extract checksum for each file
+        run: |
+          set -x
+          # Every files that don't end with '.sha256'
+          for file in $(find release-files -type f -not -name '*.sha256'); do
+            grep "$(basename "$file")" checksums.sha256 | cut -d ' ' -f 1 > "$file".sha256
+          done
+
+      - name: List files in 'release-files'.
+        run: tree release-files
+
+      - name: Generate summary
+        id: summary
+        run: |
+          EOF="EOF-$(dd if=/dev/urandom bs=15 count=1 status=none | base64)"
+          (
+            set -e
+            echo "output<<$EOF"
+            echo '# Parsec ${{ needs.version.outputs.full }}'
+            echo
+            echo 'You can find all assets checksums below, or use `<asset name>.sha256`'
+            echo
+            echo '```txt'
+            cat checksums.sha256
+            echo '```'
+            echo
+            echo 'Generated by <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>'
+            echo "$EOF"
+          ) | tee -a $GITHUB_OUTPUT
+
+      - name: Remove previous nightly release
+        if: env.NIGHTLY_RELEASE == 'true'
+        run: |
+          if gh release ${{ env.GH_ARGS }} view nightly; then
+            gh release ${{ env.GH_ARGS }} delete nightly
+          else
+            echo "No nightly release to remove"
+          fi
+        env:
+          GH_ARGS: --repo=${{ github.server_url}}/${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Checkout the repository to update the nightly tag
+        if: env.NIGHTLY_RELEASE == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
+          path: parsec-cloud
+        timeout-minutes: 5
+
+      - name: Update the nightly tag
+        if: env.NIGHTLY_RELEASE == 'true'
+        run: |
+          git tag --force nightly ${{ needs.version.outputs.commit_sha }}
+          git push --force origin refs/tags/nightly
+        working-directory: parsec-cloud
+
+      - name: Create release
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # pin v2.2.1
+        with:
+          draft: ${{ env.NIGHTLY_RELEASE != 'true' }}
+          tag_name: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || github.ref }}
+          body: ${{ steps.summary.outputs.output }}
+          prerelease: ${{ needs.version.outputs.pre != '' || needs.version.outputs.dev != '' || needs.version.outputs.local != '' }}
+          name: ${{ env.NIGHTLY_RELEASE == 'true' && 'Nightly release' || format('Release v{0}', needs.version.outputs.full) }}
+          # release-files/Parsec_${{ needs.version.outputs.full }}_win_*.exe*
+          files: |
+            release-files/parsec_cloud-${{ needs.version.outputs.pep440 }}-*.whl*
+            release-files/Parsec_${{ needs.version.outputs.full }}_linux_*.AppImage*
+            release-files/Parsec_${{ needs.version.outputs.full }}_linux_*.snap*
+            release-files/Parsec_${{ needs.version.outputs.full }}_mac_*.dmg*
+            release-files/Parsec_${{ needs.version.outputs.full }}_mac_*.zip*
+            release-files/parsec-cli_${{ needs.version.outputs.full }}_linux-x86_64-*
+            release-files/python-*-requirements.txt
+            release-files/python-*-requirements.txt.sha256
+            release-files/latest-*.yml
+            release-files/latest-*.yml.sha256
+            release-files/Parsec-SBOM-*.spdx.json
+            release-files/Parsec-SBOM-*.spdx.json.sha256
+            release-files/version
+            release-files/version.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+        timeout-minutes: 5
+
+  publish:
+    needs: releaser
+    # Only publish after release if the release is for a nightly build.
+    # We only do that for nightly because we do not create the github release as draft for nightlies to limit the need to human interventions.
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/tags/nightly'))
+      && needs.releaser.result == 'success'
+      && always()
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      release_tag: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || github.ref_name }}
+      nightly: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/tags/nightly' }}
+    secrets:
+      SNAPCRAFT_CREDENTIALS: ${{ secrets.SNAPCRAFT_CREDENTIALS }}
+      PYPI_CREDENTIALS: ${{ secrets.PYPI_CREDENTIALS }}

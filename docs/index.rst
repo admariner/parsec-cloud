@@ -1,53 +1,70 @@
-.. Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
+.. Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS
 
-.. note::
-    Parsec's documentation is available in several languages and versions.
-    Expand the "Read the Docs" panel at the bottom of the sidebar to see the list.
+.. only:: html
 
+   .. note::
+        Parsec documentation is available in English and French.
+        Expand the "Read the Docs" panel at the bottom of the sidebar to see the list.
 
-===========
-Parsec Docs
-===========
+====================
+Parsec Documentation
+====================
 
 .. image:: parsec_doc_logo.png
     :align: center
     :alt: parsec banner
+    :class: extra-margin-bottom·
 
-Welcome to the Parsec documentation. If you are new to this documentation,
-we recommend that you read the :ref:`introduction page <doc_introduction>` to get
-an overview of what this documentation has to offer.
+Welcome to the Parsec documentation. Take a look at the :ref:`Introduction <doc_introduction>`
+to get an overview of what Parsec can do for you.
 
 The table of contents displayed below and in the sidebar should let you easily
-access the documentation for your topic of interest. You can also use the search
-function in the top left corner.
-
-The main documentation for the site is organized into the following sections:
+navigate the documentation.
+You can also use the search function in the top left corner.
 
 .. toctree::
     :maxdepth: 1
-    :caption: General
-    :name: sec-general
+    :caption: User Guide
+    :name: section-user-guide
 
     introduction
-    userguide/index
+    userguide/installation
+    userguide/new_organization
+    userguide/first_steps
+    userguide/manage_organization
+    userguide/join_organization
+    userguide/parsec_workspaces
+    userguide/manage_devices
+    userguide/troubleshooting
+
+.. toctree::
+    :maxdepth: 1
+    :caption: Hosting Guide
+    :name: section-hosting-guide
+
+    hosting/introduction
+    hosting/install_cli
+    hosting/deployment/index
+    hosting/maintenance/index
+    hosting/administration/index
 
 
 .. toctree::
     :maxdepth: 1
     :caption: Advanced concepts
-    :name: sec-installation
+    :name: section-advanced-concepts
 
     architecture
-    roles
     cryptography
 
+.. only:: html
 
-.. toctree::
-    :maxdepth: 1
-    :caption: Development
-    :name: sec-devel
+   .. toctree::
+       :maxdepth: 1
+       :caption: Development
+       :name: section-development
 
-    history
+       history
 
 .. Indices and tables
 .. ------------------

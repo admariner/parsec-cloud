@@ -1,0 +1,56 @@
+[package]
+name = "libparsec_tests_fixtures"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = [
+    "test-with-client-connection-testbed",
+    "test-with-platform-device-loader-testbed",
+    "test-with-platform-ipc-testbed",
+    "test-with-platform-storage-testbed",
+]
+test-with-client-connection-testbed = [
+    "dep:libparsec_client_connection",
+    "libparsec_client_connection/test-with-testbed",
+]
+test-with-platform-device-loader-testbed = [
+    "dep:libparsec_platform_device_loader",
+    "libparsec_platform_device_loader/test-with-testbed",
+]
+test-with-platform-ipc-testbed = [
+    "dep:libparsec_platform_ipc",
+    "libparsec_platform_ipc/test-with-testbed",
+]
+test-with-platform-storage-testbed = [
+    "dep:libparsec_platform_storage",
+    "libparsec_platform_storage/test-with-testbed",
+]
+
+[dependencies]
+libparsec_types = { workspace = true, features = ["test-fixtures", "test-mock-time"] }
+libparsec_tests_lite = { workspace = true, features = ["parsec_test_macro"] }
+libparsec_testbed = { workspace = true }
+
+uuid = { workspace = true, features = ["v4", "fast-rng"] }
+
+# Enable testbed support in crates here
+
+libparsec_client_connection = { workspace = true, optional = true }
+libparsec_platform_device_loader = { workspace = true, optional = true }
+libparsec_platform_storage = { workspace = true, optional = true }
+
+# `libparsec_platform_ipc` is not implemented on web, so there is no
+# testbed support to enable in this case !
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libparsec_platform_ipc = { workspace = true, optional = true }
+
+# No dev-dependencies: this crate is itself only used in other crates' own dev-dependencies

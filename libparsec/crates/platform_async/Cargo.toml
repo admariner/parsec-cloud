@@ -1,0 +1,42 @@
+[package]
+name = "libparsec_platform_async"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-lock = { workspace = true }
+async-broadcast = { workspace = true }
+event-listener = { workspace = true }
+flume = { workspace = true, features = ["async", "select", "eventual-fairness"] }
+futures = { workspace = true, features = ["std", "async-await"] }
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+libparsec_tests_lite = { workspace = true, features = ["parsec_test_macro"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true, features = ["spans", "std"] }
+wasm-bindgen-futures = { workspace = true }
+# `Window` & `Performance` features are require to call Web API `windows.performance.now()`
+# that is use for our `Instant` impl on web.
+web-sys = { workspace = true, features = ["Window", "Performance"] }
+js-sys = { workspace = true }
+gloo-timers = { workspace = true, features = ["futures"] }
+pin-project = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+web-sys = { workspace = true, features = ["console"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# `time` feature is not compatible with web (since it depends on a timer
+# API that is not provided by `wasm32-unknown-unknown`).
+tokio = { workspace = true, features = ["time"] }

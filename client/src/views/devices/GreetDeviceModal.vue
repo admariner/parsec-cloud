@@ -1,0 +1,785 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
+<template>
+  <ion-page
+    class="modal-stepper"
+    :class="GreetDeviceStep[pageStep]"
+  >
+    <ms-wizard-stepper
+      v-show="pageStep > GreetDeviceStep.WaitForGuest && pageStep < GreetDeviceStep.Summary"
+      :current-index="getStepperIndex()"
+      :titles="['DevicesPage.greet.steps.hostCode', 'DevicesPage.greet.steps.guestCode']"
+    />
+    <ion-buttons
+      slot="end"
+      class="closeBtn-container"
+    >
+      <ion-button
+        slot="icon-only"
+        @click="cancelModal()"
+        v-show="pageStep !== GreetDeviceStep.Summary"
+        class="closeBtn"
+      >
+        <ion-icon
+          :icon="close"
+          size="large"
+          class="closeBtn__icon"
+        />
+      </ion-button>
+    </ion-buttons>
+    <div class="modal">
+      <ion-header class="modal-header">
+        <ion-title class="modal-header__title title-h2">
+          {{ $msTranslate(getTitleAndSubtitle().title) }}
+        </ion-title>
+        <ion-text
+          class="modal-header__text body"
+          v-show="getTitleAndSubtitle().subtitle"
+        >
+          {{ $msTranslate(getTitleAndSubtitle().subtitle) }}
+        </ion-text>
+      </ion-header>
+      <div class="modal-content inner-content">
+        <!-- waiting step -->
+        <div
+          v-show="pageStep === GreetDeviceStep.WaitForGuest"
+          class="first-step"
+        >
+          <ms-informative-text>
+            {{ $msTranslate('DevicesPage.greet.subtitles.waitForGuest') }}
+          </ms-informative-text>
+          <div class="first-step-content">
+            <!-- title -->
+            <ion-text class="content-title">
+              <span class="content-title__blue">
+                {{ $msTranslate('DevicesPage.greet.subtitles.scanOrShare1') }}
+              </span>
+              <span class="content-title__grey">
+                {{ $msTranslate('DevicesPage.greet.subtitles.scanOrShare2') }}
+              </span>
+              <span class="content-title__blue">
+                {{ $msTranslate('DevicesPage.greet.subtitles.scanOrShare3') }}
+              </span>
+            </ion-text>
+            <!-- qr code, link and button -->
+            <div class="content-sharing">
+              <!-- left element: qr code -->
+              <figure class="qrcode">
+                <!-- #4294FF is light-primary-500 -->
+                <q-r-code-vue3
+                  :value="greeter.invitationLink"
+                  :key="greeter.invitationLink"
+                  :image="LogoIconGradient"
+                  :image-options="{ hideBackgroundDots: true, imageSize: 1, margin: 1 }"
+                  :qr-options="{ errorCorrectionLevel: 'L' }"
+                  :dots-options="{
+                    type: 'dots',
+                    color: '#4294FF',
+                  }"
+                  :background-options="{ color: '#ffffff' }"
+                  :corners-square-options="{ type: 'extra-rounded', color: '#4294FF' }"
+                  :corners-dot-options="{ type: 'dot', color: '#4294FF' }"
+                />
+              </figure>
+              <div class="divider">
+                <ion-text class="title-h4">
+                  {{ $msTranslate('FoldersPage.importModal.or') }}
+                </ion-text>
+              </div>
+              <!-- right element: invite link, copy button, email button -->
+              <div class="right-side">
+                <ion-card class="card">
+                  <ion-card-content class="card-content">
+                    <ion-text
+                      v-if="!linkCopiedToClipboard"
+                      class="card-content__text body"
+                    >
+                      {{ greeter.invitationLink }}
+                    </ion-text>
+                    <ion-text
+                      v-else
+                      class="card-content__text body copied"
+                    >
+                      {{ $msTranslate('DevicesPage.greet.subtitles.copiedToClipboard') }}
+                    </ion-text>
+                    <ion-button
+                      fill="clear"
+                      size="small"
+                      id="copy-link-btn"
+                      @click="copyLink"
+                      v-if="!linkCopiedToClipboard"
+                    >
+                      <ion-icon
+                        class="icon-copy"
+                        :icon="copy"
+                      />
+                    </ion-button>
+                    <ion-icon
+                      v-else
+                      class="icon-checkmark"
+                      :icon="checkmarkCircle"
+                    />
+                  </ion-card-content>
+                </ion-card>
+                <div class="email">
+                  <ion-button
+                    class="email-button"
+                    @click="sendEmail"
+                    fill="outline"
+                    v-show="!isEmailSent"
+                  >
+                    {{ $msTranslate('DevicesPage.greet.actions.sendEmail') }}
+                  </ion-button>
+                  <ion-text
+                    v-show="isEmailSent"
+                    class="small-text subtitles-sm"
+                  >
+                    {{ $msTranslate('DevicesPage.greet.emailSent') }}
+                    <ion-icon
+                      class="email-button__icon"
+                      :icon="checkmarkCircle"
+                    />
+                  </ion-text>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- give code step -->
+        <div
+          v-show="pageStep === GreetDeviceStep.ProvideHostSasCode"
+          class="step"
+        >
+          <sas-code-provide :code="greeter.hostSASCode" />
+        </div>
+
+        <!-- choose code step -->
+        <div
+          v-show="pageStep === GreetDeviceStep.GetGuestSasCode"
+          class="step"
+        >
+          <sas-code-choice
+            :choices="greeter.SASCodeChoices"
+            @select="selectGuestSas"
+          />
+        </div>
+
+        <!-- Waiting guest info step -->
+        <div
+          v-show="pageStep === GreetDeviceStep.WaitForGuestInfo"
+          class="step"
+        >
+          <ms-informative-text>
+            {{ $msTranslate('DevicesPage.greet.subtitles.getDeviceInfo') }}
+          </ms-informative-text>
+        </div>
+
+        <!-- Final Step -->
+        <div
+          v-show="pageStep === GreetDeviceStep.Summary"
+          class="step final-step"
+        >
+          <device-card
+            :device="{
+              deviceLabel: greeter.requestedDeviceLabel,
+              createdOn: DateTime.now(),
+              id: '',
+              purpose: DevicePurpose.Standard,
+              createdBy: null,
+            }"
+            :is-current="false"
+            :show-id="false"
+          />
+        </div>
+      </div>
+      <ion-footer class="modal-footer">
+        <ion-buttons
+          slot="primary"
+          class="modal-footer-buttons"
+        >
+          <ion-button
+            fill="solid"
+            size="default"
+            id="next-button"
+            v-show="nextButtonIsVisible"
+            @click="nextStep()"
+            :disabled="!canGoForward"
+          >
+            <span>
+              {{ $msTranslate(getNextButtonText()) }}
+            </span>
+          </ion-button>
+          <div
+            v-show="waitingForGuest"
+            class="spinner-container"
+          >
+            <ion-text class="subtitles-normal">
+              {{ $msTranslate('DevicesPage.greet.waiting') }}
+            </ion-text>
+            <ms-spinner class="spinner" />
+          </div>
+        </ion-buttons>
+      </ion-footer>
+    </div>
+  </ion-page>
+</template>
+
+<script setup lang="ts">
+import LogoIconGradient from '@/assets/images/logo-icon-gradient.svg';
+import DeviceCard from '@/components/devices/DeviceCard.vue';
+import SasCodeChoice from '@/components/sas-code/SasCodeChoice.vue';
+import SasCodeProvide from '@/components/sas-code/SasCodeProvide.vue';
+import { DeviceGreet, GreetInProgressErrorTag, CancelledGreetingAttemptReason, DevicePurpose } from '@/parsec';
+import { Information, InformationLevel, InformationManager, PresentationMode } from '@/services/informationManager';
+import {
+  Answer,
+  Clipboard,
+  MsModalResult,
+  askQuestion,
+  MsInformativeText,
+  MsWizardStepper,
+  Translatable,
+  startCounter,
+} from 'megashark-lib';
+import {
+  IonButton,
+  IonButtons,
+  IonCard,
+  IonCardContent,
+  IonFooter,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonText,
+  IonTitle,
+  modalController,
+} from '@ionic/vue';
+import { checkmarkCircle, close, copy } from 'ionicons/icons';
+import QRCodeVue3 from 'qrcode-vue3';
+import { computed, onMounted, ref } from 'vue';
+import { MsSpinner } from 'megashark-lib';
+import { DateTime } from 'luxon';
+
+enum GreetDeviceStep {
+  WaitForGuest = 1,
+  ProvideHostSasCode = 2,
+  GetGuestSasCode = 3,
+  WaitForGuestInfo = 4,
+  Summary = 5,
+}
+
+const props = defineProps<{
+  informationManager: InformationManager;
+  invitationLink: string;
+  token: string;
+}>();
+
+const pageStep = ref(GreetDeviceStep.WaitForGuest);
+const canGoForward = ref(false);
+const waitingForGuest = ref(true);
+const isEmailSent = ref(false);
+const elapsedCount = ref(0);
+const greeter = ref(new DeviceGreet());
+const linkCopiedToClipboard = ref(false);
+const cancelled = ref(false);
+
+interface GreetDeviceTitle {
+  title: Translatable;
+  subtitle?: Translatable;
+}
+
+function getTitleAndSubtitle(): GreetDeviceTitle {
+  if (pageStep.value === GreetDeviceStep.WaitForGuest) {
+    return { title: 'DevicesPage.greet.titles.waitForGuest' };
+  } else if (pageStep.value === GreetDeviceStep.ProvideHostSasCode) {
+    return {
+      title: 'DevicesPage.greet.titles.provideHostCode',
+      subtitle: 'DevicesPage.greet.subtitles.provideHostCode',
+    };
+  } else if (pageStep.value === GreetDeviceStep.GetGuestSasCode) {
+    return { title: 'DevicesPage.greet.titles.getGuestCode', subtitle: 'DevicesPage.greet.subtitles.getGuestCode' };
+  } else if (pageStep.value === GreetDeviceStep.WaitForGuestInfo) {
+    return { title: 'DevicesPage.greet.titles.deviceDetails' };
+  } else if (pageStep.value === GreetDeviceStep.Summary) {
+    return {
+      title: 'DevicesPage.greet.titles.summary',
+      subtitle: {
+        key: 'DevicesPage.greet.subtitles.summary',
+        data: {
+          label: greeter.value.requestedDeviceLabel,
+        },
+      },
+    };
+  }
+  return { title: '' };
+}
+
+async function updateCanGoForward(): Promise<void> {
+  if (pageStep.value === GreetDeviceStep.WaitForGuest && waitingForGuest.value === true) {
+    canGoForward.value = false;
+  } else {
+    canGoForward.value = true;
+  }
+}
+
+function getNextButtonText(): string {
+  if (pageStep.value === GreetDeviceStep.WaitForGuest) {
+    return 'DevicesPage.greet.actions.start';
+  } else if (pageStep.value === GreetDeviceStep.Summary) {
+    return 'DevicesPage.greet.actions.finish';
+  }
+  return '';
+}
+
+async function selectGuestSas(code: string | null): Promise<void> {
+  if (!code) {
+    await showErrorAndRestart('DevicesPage.greet.errors.noneCodeSelected');
+    return;
+  }
+  if (code === greeter.value.correctSASCode) {
+    const result = await greeter.value.signifyTrust();
+    if (result.ok) {
+      await nextStep();
+    } else {
+      await showErrorAndRestart({ key: 'DevicesPage.greet.errors.unexpected', data: { reason: result.error.tag } });
+      if (result.error.tag === GreetInProgressErrorTag.GreetingAttemptCancelled) {
+        switch (result.error.reason) {
+          case CancelledGreetingAttemptReason.ManuallyCancelled:
+            await showErrorAndRestart('DevicesPage.greet.errors.claimer.manuallyCancelled');
+            break;
+          default:
+            await showErrorAndRestart('DevicesPage.greet.errors.claimer.default');
+            break;
+        }
+      } else {
+        await showErrorAndRestart({ key: 'DevicesPage.greet.errors.unexpected', data: { reason: result.error.tag } });
+      }
+    }
+  } else {
+    await greeter.value.denyTrust();
+    await showErrorAndRestart('DevicesPage.greet.errors.invalidCodeSelected');
+  }
+}
+
+async function restartProcess(): Promise<void> {
+  await greeter.value.abort();
+  await startProcess();
+}
+
+async function startProcess(): Promise<void> {
+  pageStep.value = GreetDeviceStep.WaitForGuest;
+  waitingForGuest.value = true;
+  const result = await greeter.value.startGreet();
+  if (!result.ok) {
+    props.informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.errors.startFailed',
+        level: InformationLevel.Error,
+      }),
+      PresentationMode.Toast,
+    );
+    await cancelModal();
+    return;
+  }
+  const waitResult = await greeter.value.initialWaitGuest();
+  if (!waitResult.ok && !cancelled.value) {
+    let message: Translatable = '';
+    let level: InformationLevel;
+    switch (waitResult.error.tag) {
+      case GreetInProgressErrorTag.Cancelled:
+        message = 'DevicesPage.greet.cancelled';
+        level = InformationLevel.Info;
+        break;
+      default:
+        message = 'DevicesPage.greet.errors.startFailed';
+        level = InformationLevel.Error;
+        break;
+    }
+    props.informationManager.present(
+      new Information({
+        message: message,
+        level: level,
+      }),
+      PresentationMode.Toast,
+    );
+    await cancelModal();
+    return;
+  }
+  waitingForGuest.value = false;
+  await updateCanGoForward();
+}
+
+function getStepperIndex(): number {
+  if (pageStep.value <= GreetDeviceStep.ProvideHostSasCode) {
+    return 0;
+  }
+  return 1;
+}
+
+const nextButtonIsVisible = computed(() => {
+  if (cancelled.value) {
+    return false;
+  }
+  if (pageStep.value === GreetDeviceStep.WaitForGuest && waitingForGuest.value) {
+    return false;
+  } else if (pageStep.value === GreetDeviceStep.ProvideHostSasCode) {
+    return false;
+  } else if (pageStep.value === GreetDeviceStep.GetGuestSasCode) {
+    return false;
+  } else if (pageStep.value === GreetDeviceStep.WaitForGuestInfo) {
+    return false;
+  }
+  return true;
+});
+
+async function cancelModal(): Promise<boolean> {
+  cancelled.value = true;
+  if (pageStep.value === GreetDeviceStep.Summary) {
+    return await modalController.dismiss(null, MsModalResult.Cancel);
+  }
+  if (pageStep.value === GreetDeviceStep.WaitForGuest) {
+    await greeter.value.abort();
+    return await modalController.dismiss(null, MsModalResult.Cancel);
+  }
+  const answer = await askQuestion('DevicesPage.greet.titles.cancelGreet', 'DevicesPage.greet.subtitles.cancelGreet', {
+    keepMainModalHiddenOnYes: true,
+    yesIsDangerous: true,
+    yesText: 'DevicesPage.greet.actions.cancelGreet.yes',
+    noText: 'DevicesPage.greet.actions.cancelGreet.no',
+    backdropDismiss: false,
+  });
+
+  if (answer === Answer.Yes) {
+    await greeter.value.abort();
+    return await modalController.dismiss(null, MsModalResult.Cancel);
+  }
+  return false;
+}
+
+async function showErrorAndRestart(message: Translatable): Promise<void> {
+  props.informationManager.present(
+    new Information({
+      message: message,
+      level: InformationLevel.Error,
+    }),
+    PresentationMode.Toast,
+  );
+  await restartProcess();
+}
+
+async function nextStep(): Promise<void> {
+  await updateCanGoForward();
+  if (!canGoForward.value) {
+    return;
+  }
+  if (pageStep.value === GreetDeviceStep.Summary) {
+    props.informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.success',
+        level: InformationLevel.Success,
+      }),
+      PresentationMode.Toast,
+    );
+    await modalController.dismiss({}, MsModalResult.Confirm);
+    return;
+  }
+
+  pageStep.value = pageStep.value + 1;
+
+  await updateCanGoForward();
+
+  if (pageStep.value === GreetDeviceStep.ProvideHostSasCode) {
+    waitingForGuest.value = true;
+    const result = await greeter.value.waitGuestTrust();
+    waitingForGuest.value = false;
+    if (result.ok) {
+      await nextStep();
+    } else {
+      if (result.error.tag === GreetInProgressErrorTag.GreetingAttemptCancelled) {
+        switch (result.error.reason) {
+          case CancelledGreetingAttemptReason.InvalidSasCode:
+            await showErrorAndRestart('DevicesPage.greet.errors.claimer.invalidSasCode');
+            break;
+          case CancelledGreetingAttemptReason.ManuallyCancelled:
+            await showErrorAndRestart('DevicesPage.greet.errors.claimer.manuallyCancelled');
+            break;
+          case CancelledGreetingAttemptReason.AutomaticallyCancelled:
+            await showErrorAndRestart('DevicesPage.greet.errors.claimer.automaticallyCancelled');
+            break;
+          default:
+            await showErrorAndRestart('DevicesPage.greet.errors.claimer.default');
+            break;
+        }
+      } else {
+        await showErrorAndRestart({ key: 'DevicesPage.greet.errors.unexpected', data: { reason: result.error.tag } });
+      }
+    }
+  } else if (pageStep.value === GreetDeviceStep.WaitForGuestInfo) {
+    waitingForGuest.value = true;
+    const result = await greeter.value.getClaimRequests();
+    waitingForGuest.value = false;
+    if (result.ok) {
+      const createResult = await greeter.value.createDevice();
+      if (!createResult.ok) {
+        await showErrorAndRestart('DevicesPage.greet.errors.createDeviceFailed');
+        return;
+      }
+      await nextStep();
+    } else {
+      await showErrorAndRestart('DevicesPage.greet.errors.retrieveDeviceInfoFailed');
+    }
+  }
+}
+
+async function copyLink(): Promise<void> {
+  if (!(await Clipboard.writeText(greeter.value.invitationLink))) {
+    props.informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.linkNotCopiedToClipboard',
+        level: InformationLevel.Error,
+      }),
+      PresentationMode.Toast,
+    );
+  } else {
+    linkCopiedToClipboard.value = true;
+    setTimeout(() => {
+      linkCopiedToClipboard.value = false;
+    }, 5000);
+    props.informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.linkCopiedToClipboard',
+        level: InformationLevel.Info,
+      }),
+      PresentationMode.Toast,
+    );
+  }
+}
+
+async function sendEmail(): Promise<void> {
+  async function updateCounter(elapsed: number): Promise<void> {
+    if (elapsed === 5000) {
+      elapsedCount.value = 0;
+    } else {
+      elapsedCount.value = Math.round((5000 - elapsed) / 1000);
+    }
+  }
+
+  if (await greeter.value.sendEmail()) {
+    isEmailSent.value = true;
+    startCounter(5000, 1000, updateCounter);
+  } else {
+    props.informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.errors.emailFailed',
+        level: InformationLevel.Error,
+      }),
+      PresentationMode.Toast,
+    );
+  }
+}
+
+onMounted(async () => {
+  greeter.value.setInvitationInformation(props.invitationLink, props.token);
+  await startProcess();
+});
+</script>
+
+<style scoped lang="scss">
+.first-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  flex-shrink: 0;
+}
+.first-step-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 37.5rem;
+  background-color: var(--parsec-color-light-secondary-background);
+  border-radius: var(--parsec-radius-6);
+  padding: 2rem 0;
+
+  .content-title {
+    text-align: center;
+    /* Titles/H3 */
+    font-family: 'Albert Sans';
+    font-size: 1.125rem;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 120%;
+
+    &__blue {
+      color: var(--parsec-color-light-primary-600);
+    }
+
+    &__grey {
+      color: var(--parsec-color-light-secondary-grey);
+    }
+  }
+
+  .content-sharing {
+    display: flex;
+    align-items: center;
+    margin-top: 1.5rem;
+    gap: 1.5rem;
+
+    .qrcode {
+      display: flex;
+      width: 7.5rem;
+      padding: 0.3rem;
+      background: var(--parsec-color-light-secondary-white);
+      position: relative;
+      margin: 0;
+    }
+
+    .divider {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+
+      ion-text {
+        color: var(--parsec-color-light-secondary-light);
+        text-transform: uppercase;
+
+        &::before {
+          content: '';
+          margin: auto;
+          display: flex;
+          margin-bottom: 1rem;
+          background: var(--parsec-color-light-secondary-light);
+          width: 1.5px;
+          height: 3rem;
+        }
+        &::after {
+          content: '';
+          margin: auto;
+          display: flex;
+          margin-top: 1rem;
+          background: var(--parsec-color-light-secondary-light);
+          width: 1.5px;
+          height: 3rem;
+        }
+      }
+    }
+
+    .right-side {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      width: 20rem;
+
+      .card {
+        margin: 0;
+        background-color: var(--parsec-color-light-secondary-white);
+        border-radius: var(--parsec-radius-6);
+        border: 1px solid var(--parsec-color-light-secondary-disabled);
+        box-shadow: none;
+
+        .card-content {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          padding: 0.5rem;
+          position: relative;
+
+          &__text {
+            margin: 0;
+            overflow: hidden;
+            color: var(--parsec-color-light-secondary-text);
+            white-space: nowrap;
+            text-overflow: ellipsis;
+
+            &.copied {
+              color: var(--parsec-color-light-success-700);
+            }
+          }
+
+          #copy-link-btn {
+            color: var(--parsec-color-light-secondary-text);
+            margin: 0;
+
+            &::part(native) {
+              padding: 0.5rem;
+              border-radius: var(--parsec-radius-6);
+            }
+
+            &:hover {
+              color: var(--parsec-color-light-primary-600);
+            }
+          }
+
+          ion-icon[class^='icon-'] {
+            display: flex;
+            width: 1rem;
+            height: 1rem;
+            margin: 0;
+          }
+
+          .icon-checkmark {
+            position: relative;
+            color: var(--parsec-color-light-success-700);
+            padding: 0.5rem;
+          }
+        }
+      }
+
+      .email {
+        height: 1em;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        position: relative;
+      }
+
+      .email-button {
+        display: flex;
+        width: fit-content;
+        position: relative;
+        margin: 0;
+        color: var(--parsec-color-light-secondary-text);
+
+        &::part(native) {
+          border: 1px solid var(--parsec-color-light-secondary-text);
+        }
+
+        &:hover {
+          &::part(native) {
+            border: 1px solid var(--parsec-color-light-secondary-contrast);
+          }
+        }
+
+        &__icon {
+          font-size: 1rem;
+        }
+      }
+
+      .small-text {
+        color: var(--parsec-color-light-success-700);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        position: absolute;
+      }
+    }
+  }
+}
+
+.final-step {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  border-radius: var(--parsec-radius-6);
+  justify-content: space-between;
+  color: var(--parsec-color-light-secondary-text);
+  width: 20rem;
+}
+
+.spinner {
+  padding-bottom: 0.5rem;
+}
+</style>

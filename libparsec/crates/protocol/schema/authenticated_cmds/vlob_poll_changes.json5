@@ -1,0 +1,41 @@
+[
+    {
+        "major_versions": [
+            4
+        ],
+        "req": {
+            "cmd": "vlob_poll_changes",
+            "fields": [
+                {
+                    "name": "realm_id",
+                    "type": "VlobID"
+                },
+                {
+                    "name": "last_checkpoint",
+                    "type": "Index"
+                }
+            ]
+        },
+        "reps": [
+            {
+                "status": "ok",
+                "fields": [
+                    {
+                        "name": "changes",
+                        "type": "List<(VlobID, Version)>"
+                    },
+                    {
+                        "name": "current_checkpoint",
+                        "type": "Index"
+                    }
+                ]
+            },
+            {
+                "status": "author_not_allowed"
+            },
+            {
+                "status": "realm_not_found"
+            }
+        ]
+    }
+]

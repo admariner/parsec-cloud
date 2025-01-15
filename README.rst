@@ -10,13 +10,13 @@ Parsec
     :target: https://github.com/Scille/parsec-cloud/actions/workflows/ci.yml
     :alt: Continuous Integration
 
-.. image:: https://github.com/Scille/parsec-cloud/actions/workflows/package-ci.yml/badge.svg
-    :target: https://github.com/Scille/parsec-cloud/actions/workflows/package-ci.yml
-    :alt: Latest Packaging CI
+.. image:: https://github.com/Scille/parsec-cloud/actions/workflows/package-server.yml/badge.svg
+    :target: https://github.com/Scille/parsec-cloud/actions/workflows/package-server.yml
+    :alt: Latest Server Packaging CI
 
-.. image:: https://pyup.io/repos/github/Scille/parsec-cloud/shield.svg
-    :target: https://pyup.io/repos/github/Scille/parsec-cloud/
-    :alt: Updates
+.. image:: https://github.com/Scille/parsec-cloud/actions/workflows/package-client.yml/badge.svg
+    :target: https://github.com/Scille/parsec-cloud/actions/workflows/package-client.yml
+    :alt: Latest App Packaging CI
 
 .. image:: https://img.shields.io/pypi/v/parsec-cloud.svg
     :target: https://pypi.python.org/pypi/parsec-cloud
@@ -26,10 +26,9 @@ Parsec
     :target: http://parsec-cloud.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. image:: https://img.shields.io/badge/code%20style-black-000000.svg
-    :target: https://github.com/ambv/black
-    :alt: Code style: black
-
+.. image:: https://img.shields.io/badge/code%20style-ruff-D7FF64
+  :target: https://github.com/charliermarsh/ruff
+  :alt: Code style: ruff
 
 Homepage: https://parsec.cloud
 
@@ -68,12 +67,6 @@ Windows installers are available at https://github.com/Scille/parsec-cloud/relea
 Linux Snap
 ----------
 Available for Linux through Snapcraft at https://snapcraft.io/parsec
-
-Python PIP
-----------
-Parsec is also available directly through PIP for both Linux and Windows with Python > 3.9 with the command:
-``pip install parsec-cloud``
-(or, if you need to specify Python 3 pip version, ``pip3 install parsec-cloud``)
 
 Self-hosted
 -----------

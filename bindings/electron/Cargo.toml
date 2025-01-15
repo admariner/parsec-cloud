@@ -1,0 +1,42 @@
+[package]
+name = "libparsec_bindings_electron"
+exclude = ["libparsec.node"]
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[features]
+test-utils = ["libparsec/test-utils"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+env_logger = { workspace = true, features = ["auto-color", "humantime", "regex"] }
+lazy_static = { workspace = true }
+libparsec = { workspace = true }
+neon = { workspace = true, features = ["napi-8"] }
+once_cell = { workspace = true }
+sentry = { workspace = true, features = [
+    "backtrace",
+    "contexts",
+    "debug-images",
+    "log",
+    "native-tls",
+    "panic",
+    "reqwest",
+    "transport",
+] }
+sentry-log = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+log = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winfsp_wrs_build = { workspace = true }

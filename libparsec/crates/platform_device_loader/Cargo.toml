@@ -1,0 +1,47 @@
+[package]
+name = "libparsec_platform_device_loader"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+test-with-testbed = ["libparsec_testbed"]
+vendored-dbus = ["keyring/vendored"]
+
+[dependencies]
+libparsec_types = { workspace = true }
+libparsec_crypto = { workspace = true }
+libparsec_testbed = { workspace = true, optional = true }
+
+# `alloc` feature is required to properly erase struct containing vec/string
+zeroize = { workspace = true, features = ["alloc"] }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dirs = { workspace = true }
+keyring = { workspace = true, features = [
+    # Persistent means we use DBus's secret-services on linux
+    "linux-native-sync-persistent",
+    "apple-native",
+    "windows-native",
+] }
+uuid = { workspace = true }
+tokio = { workspace = true, features = ["fs"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { workspace = true, features = ["Window", "Storage"] }
+serde_json = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+libparsec_tests_lite = { workspace = true }
+# Note `libparsec_tests_fixtures` enables our `test-with-testbed` feature
+libparsec_tests_fixtures = { workspace = true, features = [
+    "test-with-platform-device-loader-testbed",
+] }

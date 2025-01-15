@@ -1,3 +1,5 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
 # Investigate using http+sse instead of websocket to serve authenticated api
 
 From [ISSUE-2358](https://github.com/Scille/parsec-cloud/issues/2358)
@@ -10,7 +12,7 @@ But websocket is still more complex than regular http:
 
 - company firewalls often block websocket by default
 - http is stateless, so reconnection (and reuse of already opened connection) is transparente
-- http2 handles head of line blocking which remove entirely the need for multiple connections to the backend
+- http2 handles head of line blocking which remove entirely the need for multiple connections to the server
 
 So it would be good if we can expose the authenticated api as http+sse (hence we could use [reqwest](https://github.com/seanmonstar/reqwest) in Rust than handle http2 and wasm32 out of the box \o/)
 
@@ -28,8 +30,8 @@ There is two approches to implement this with http:
 pros/cons:
 
 - stateful is a bit faster than stateless given cryptographic operations are only done once when obtaining the token.
-- stateles should be simpler given less route to implement
-- to obtain the token in stateful, the client has to sign something. This might be a timestamp or a something random provided by the server (in which case we have yet another round trip to handle, the backend must keep track of the random info, or sign it)
+- stateless should be simpler given less route to implement
+- to obtain the token in stateful, the client has to sign something. This might be a timestamp or a something random provided by the server (in which case we have yet another round trip to handle, the server must keep track of the random info, or sign it)
 
 interesting stuff:
 
@@ -42,7 +44,7 @@ interesting stuff:
 With the current websocket-based api, the very first requests does a handshake which starts by exchanging the api versions supported by the server and the client to determine which should be used.
 
 With a http api, we would have to replace this by headers:
-1 - Client send a request to server, it uses the latest api version it supports and add the version number to the content-type header (e.g. `Content-Type: application/msgpack;v=2.6`)
+1 - Client sends a request to server, it uses the latest api version it supports and add the version number to the content-type header (e.g. `Content-Type: application/msgpack;v=2.6`)
 2 - If server support the api version, it replies with the content-type header indicating it own version of the api (this is needed given api revision might not be the same between client and server)
 3 - If server doesn't support the api version, it replies with a specific "api not supported" message which contains the list of api version it supports (e.g. `{"status": "unsupported_api_version", "supported_api_versions": ["1.10", "2.3"]}`). The client can then retry if it supports an older version.
 

@@ -1,0 +1,930 @@
+// Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS
+{# Macros -#}
+
+{#-
+ # Types conversions macros
+ #}
+
+
+{%- macro ts_type(type) -%}
+{%- if type.kind == "ref" -%}
+{{ ts_type(type.elem) }}
+{%- elif type.kind == "dict" -%}
+{# JsMap is not available in neon bindings so we use its parent class... #}
+JsObject
+{%- elif type.kind == "list" -%}
+JsArray
+{%- elif type.kind == "set" -%}
+JsArray
+{%- elif type.kind == "tuple" -%}
+JsArray
+{%- elif type.kind == "optional" -%}
+JsValue
+{%- elif type.kind == "none" -%}
+JsNull
+{%- elif type.kind == "bool" -%}
+JsBoolean
+{%- elif type.kind in ("u8_based", "i32_based", "u32_based", "i64_based", "u64_based", "f64_based", "float") -%}
+JsNumber
+{%- elif type.kind in ("str", "str_based") -%}
+JsString
+{%- elif type.kind in ("bytes", "bytes_based") -%}
+JsTypedArray<u8>
+{%- elif type.kind == "struct" -%}
+JsObject
+{%- elif type.kind == "variant" -%}
+JsObject
+{%- elif type.kind == "result" -%}
+JsObject
+{%- elif type.kind == "OnClientEventCallback" -%}
+JsFunction
+{%- elif type.kind == "enum" -%}
+JsString
+{%- else -%}
+{{ raise("Unsupported type %r" % type) }}
+{%- endif -%}
+{%- endmacro -%}
+
+
+{%- macro maybe_ref(js_val, type) -%}
+{%- if type.kind == "ref" and type.elem.kind == "list" -%}
+{{ js_val }}.as_slice()
+{%- elif type.kind == "ref" and type.elem.kind == "set" -%}
+{{ js_val }}.as_ref()
+{%- elif type.kind == "optional" and type.elem.kind == "ref" -%}
+{{ js_val }}.as_ref()
+{%- elif type.kind == "ref" -%}
+&{{ js_val }}
+{%- else -%}
+{{ js_val }}
+{%- endif -%}
+{%- endmacro -%}
+
+
+{%- macro render_downcasted_js_to_rs(js_val, type, mut_cx_ref="&mut cx") -%}
+{%- if type.kind == "ref" -%}
+{{ render_downcasted_js_to_rs(js_val, type.elem, mut_cx_ref) }}
+{%- elif type.kind == "dict" -%}
+{
+    {# `js_value` is a `JsMap` (https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) typed as a `JsObject` #}
+    {# TODO: add a `js_value instanceof Map` check here... once we figure how to do that in neon :/ #}
+    let mut d = std::collections::HashMap::with_capacity(
+        js_val.get::<JsNumber, _, _>({{ mut_cx_ref }}, "size")?.value({{ mut_cx_ref }}) as usize,
+    );
+
+    let js_keys = js_val.call_method_with({{ mut_cx_ref }}, "keys")?.apply::<JsObject, _>({{ mut_cx_ref }})?;
+    let js_values = js_val.call_method_with({{ mut_cx_ref }}, "values")?.apply::<JsObject, _>({{ mut_cx_ref }})?;
+    let js_keys_next_cb = js_keys.call_method_with({{ mut_cx_ref }}, "next")?;
+    let js_values_next_cb = js_values.call_method_with({{ mut_cx_ref }}, "next")?;
+
+    loop {
+        let next_js_key = js_keys_next_cb.apply::<JsObject, _>({{ mut_cx_ref }})?;
+        let next_js_value = js_values_next_cb.apply::<JsObject, _>({{ mut_cx_ref }})?;
+
+        let keys_done = next_js_key.get::<JsBoolean, _, _>({{ mut_cx_ref }}, "done")?.value({{ mut_cx_ref }});
+        let values_done = next_js_value.get::<JsBoolean, _, _>({{ mut_cx_ref }}, "done")?.value({{ mut_cx_ref }});
+        match (keys_done, values_done) {
+            (true, true) => break,
+            (false, false) => (),
+            _ => unreachable!(),
+        }
+
+        let js_key = next_js_key.get::<{{ ts_type(type.key) }}, _, _>({{ mut_cx_ref }}, "value")?;
+        let js_value = next_js_value.get::<{{ ts_type(type.value) }}, _, _>({{ mut_cx_ref }}, "value")?;
+
+        let key = {{ render_downcasted_js_to_rs("js_key", type.key, mut_cx_ref) }};
+        let value = {{ render_downcasted_js_to_rs("js_value", type.value, mut_cx_ref) }};
+        d.insert(key, value);
+    }
+    d
+}
+{%- elif type.kind == "list" -%}
+{
+    let size = {{ js_val }}.len({{ mut_cx_ref }});
+    let mut v = Vec::with_capacity(size as usize);
+    for i in 0..size {
+        let js_item: Handle<{{ ts_type(type.elem) }}> = {{ js_val }}.get({{ mut_cx_ref }}, i)?;
+        v.push({{ render_downcasted_js_to_rs("js_item", type.elem, mut_cx_ref) }});
+    }
+    v
+}
+{%- elif type.kind == "set" -%}
+{
+    let size = {{ js_val }}.len({{ mut_cx_ref }});
+    let mut v = Vec::with_capacity(size as usize);
+    for i in 0..size {
+        let js_item: Handle<{{ ts_type(type.elem) }}> = {{ js_val }}.get({{ mut_cx_ref }}, i)?;
+        v.push({{ render_downcasted_js_to_rs("js_item", type.elem, mut_cx_ref) }});
+    }
+    v.into_iter().collect()
+}
+{%- elif type.kind == "tuple" -%}
+(
+{%- for value in type.values -%}
+    {
+        let js_item: Handle<{{ ts_type(value) }}> = {{ js_val }}.get({{ mut_cx_ref }}, {{ loop.index0 }})?;
+        {{ render_downcasted_js_to_rs("js_item", value, mut_cx_ref) }}
+    }
+    {{ ", " if not loop.last else "" -}}
+{%- endfor -%}
+)
+{%- elif type.kind == "optional" -%}
+{
+    if {{ js_val }}.is_a::<JsNull, _>({{ mut_cx_ref }}) {
+        None
+    } else {
+        let {{ js_val }} = {{ js_val }}.downcast_or_throw::<{{ ts_type(type.elem) }}, _>({{ mut_cx_ref }})?;
+        Some(
+            {{ render_downcasted_js_to_rs("js_val", type.elem, mut_cx_ref) }}
+        )
+    }
+}
+{%- elif type.kind == "result" -%}
+{
+    if {{ js_val }}.get::<JsBoolean, _, _>({{ mut_cx_ref }}, "ok")?.value() {
+        let js_val = {{ js_val }}.get::<{{ ts_type(type.ok) }}, _, _>({{ mut_cx_ref }}, "value")?;
+        {{ render_downcasted_js_to_rs("js_val", type.ok, mut_cx_ref) }}
+    } else {
+        let js_val = {{ js_val }}.get::<{{ ts_type(type.err) }}, _, _>({{ mut_cx_ref }}, "error")?;
+        {{ render_downcasted_js_to_rs("js_val", type.err, mut_cx_ref) }}
+    }
+}
+{%- elif type.kind == "none" -%}
+{
+    let _ = {{ js_val }};
+    ()
+}
+{%- elif type.kind == "u8_based" -%}
+{
+    let v = {{ js_val }}.value({{ mut_cx_ref }});
+    if v < (u8::MIN as f64) || (u8::MAX as f64) < v {
+        cx.throw_type_error("Not an u8 number")?
+    }
+    let v = v as u8;
+    {% if type.custom_from_rs_u8 -%}
+    let custom_from_rs_u8 = {{ type.custom_from_rs_u8 }};
+    match custom_from_rs_u8(v) {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "i32_based" -%}
+{
+    let v = {{ js_val }}.value({{ mut_cx_ref }});
+    if v < (i32::MIN as f64) || (i32::MAX as f64) < v {
+        cx.throw_type_error("Not an i32 number")?
+    }
+    let v = v as i32;
+    {% if type.custom_from_rs_i32 -%}
+    let custom_from_rs_i32 = {{ type.custom_from_rs_i32 }};
+    match custom_from_rs_i32(v) {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "u32_based" -%}
+{
+    let v = {{ js_val }}.value({{ mut_cx_ref }});
+    if v < (u32::MIN as f64) || (u32::MAX as f64) < v {
+        cx.throw_type_error("Not an u32 number")?
+    }
+    let v = v as u32;
+    {% if type.custom_from_rs_u32 -%}
+    let custom_from_rs_u32 = {{ type.custom_from_rs_u32 }};
+    match custom_from_rs_u32(v) {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "i64_based" -%}
+{
+    let v = {{ js_val }}.value({{ mut_cx_ref }});
+    if v < (i64::MIN as f64) || (i64::MAX as f64) < v {
+        cx.throw_type_error("Not an i64 number")?
+    }
+    let v = v as i64;
+    {% if type.custom_from_rs_i64 -%}
+    let custom_from_rs_i64 = {{ type.custom_from_rs_i64 }};
+    match custom_from_rs_i64(v) {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "u64_based" -%}
+{
+    let v = {{ js_val }}.value({{ mut_cx_ref }});
+    if v < (u64::MIN as f64) || (u64::MAX as f64) < v {
+        cx.throw_type_error("Not an u64 number")?
+    }
+    let v = v as u64;
+    {% if type.custom_from_rs_u64 -%}
+    let custom_from_rs_u64 = {{ type.custom_from_rs_u64 }};
+    match custom_from_rs_u64(v) {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "f64_based" -%}
+{
+    let v = {{ js_val }}.value({{ mut_cx_ref }});
+    {% if type.custom_from_rs_f64 -%}
+    let custom_from_rs_f64 = {{ type.custom_from_rs_f64 }};
+    match custom_from_rs_f64(v) {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "str" -%}
+{{ js_val }}.value({{ mut_cx_ref }})
+{%- elif type.kind == "str_based" -%}
+{
+    {% if type.custom_from_rs_string -%}
+    let custom_from_rs_string = {{ type.custom_from_rs_string }};
+    match custom_from_rs_string({{ js_val }}.value({{ mut_cx_ref }}))
+    {%- else -%}
+    match {{ js_val }}.value({{ mut_cx_ref }}).parse()
+    {%- endif %}
+    {
+        Ok(val) => val,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- elif type.kind == "bytes" -%}
+{{ js_val }}.as_slice({{ mut_cx_ref }}).to_vec()
+{%- elif type.kind == "bytes_based" -%}
+{
+    {% if type.custom_from_rs_bytes -%}
+    let custom_from_rs_bytes = {{ type.custom_from_rs_bytes }};
+    #[allow(clippy::unnecessary_mut_passed)]
+    match custom_from_rs_bytes({{ js_val }}.as_slice({{ mut_cx_ref }}))
+    {%- else -%}
+    #[allow(clippy::unnecessary_mut_passed)]
+    match {{ js_val }}.as_slice({{ mut_cx_ref }}).try_into()
+    {%- endif %}
+    {
+        Ok(val) => val,
+        // err can't infer type in some case, because of the previous `try_into`
+        #[allow(clippy::useless_format)]
+        Err(err) => return cx.throw_type_error(format!("{}", err)),
+    }
+}
+{%- elif type.kind == "struct" -%}
+{{ struct_js_to_rs_function_name(type) }}({{ mut_cx_ref }}, {{ js_val }})?
+{%- elif type.kind == "variant" -%}
+{{ variant_js_to_rs_function_name(type) }}({{ mut_cx_ref }}, {{ js_val }})?
+{%- elif type.kind == "OnClientEventCallback" -%}
+// The Javascript function object is going to be shared between the closure
+// called by rust (that can be called multiple times) and the single-use
+// closure sent to the js runtime.
+// So we must use an Arc to ensure the resource is shared correctly, but
+// that's not all of it !
+// When the resource is no longer use, we must consume the reference we
+// had on the javascript function in a neon context so that it can itself
+// notify the js runtime's garbage collector.
+struct Callback {
+    js_fn: Option<neon::handle::Root<JsFunction>>,
+    channel: neon::event::Channel,
+}
+impl Drop for Callback {
+    fn drop(&mut self) {
+        if let Some(js_fn) = self.js_fn.take() {
+            // Return the js object to the js runtime to avoid memory leak
+            self.channel.send(move |mut cx| {
+                js_fn.to_inner(&mut cx);
+                Ok(())
+            });
+        }
+    }
+}
+let callback = std::sync::Arc::new(Callback{
+    js_fn: Some(js_val.root({{ mut_cx_ref }})),
+    channel: cx.channel(),
+});
+std::sync::Arc::new(
+    move |handle: libparsec::Handle, event: libparsec::ClientEvent| {
+        let callback2 = callback.clone();
+        callback.channel.send(move |mut cx| {
+            // TODO: log an error instead of panic ? (it is a bit harsh to crash
+            // the current task if an unrelated event handler has a bug...)
+            let js_event = {{ variant_rs_to_js_function_name(type.event_type) }}({{ mut_cx_ref }}, event)?;
+            let js_handle = JsNumber::new(&mut cx, handle);
+            if let Some(ref js_fn) = callback2.js_fn {
+                js_fn.to_inner(&mut cx)
+                .call_with(&cx)
+                .args((js_handle, js_event))
+                .apply::<JsValue, _>(&mut cx)?;
+            }
+            Ok(())
+        });
+    }
+) as std::sync::Arc<dyn Fn(libparsec::Handle, libparsec::ClientEvent) + Send + Sync>
+{%- elif type.kind == "enum" -%}
+{
+    let js_string = {{ js_val }}.value({{ mut_cx_ref }});
+    {{ enum_js_to_rs_function_name(type) }}({{ mut_cx_ref }}, js_string.as_str())?
+}
+{%- else -%}
+{{ js_val }}.value({{ mut_cx_ref }})
+{%- endif %}
+{%- endmacro -%}
+
+
+{%- macro render_rs_to_js(rs_value, type, mut_cx_ref="&mut cx") -%}
+{%- if type.kind == "ref" -%}
+{{ render_rs_to_js(rs_value, type.elem, mut_cx_ref) }}
+{%- elif type.kind == "dict" -%}
+{
+    {# TODO: neon bindings doesn't expose Map, so we need to rely on eval here ! #}
+    let new_map_code = ({{ mut_cx_ref }}).string("new Map()");
+    let js_map = neon::reflect::eval({{ mut_cx_ref }}, new_map_code)?.downcast_or_throw::<JsObject, _>({{ mut_cx_ref }})?;
+    for (key, value) in {{ rs_value }}.into_iter() {
+        let js_key = {{ render_rs_to_js("key", type.key, mut_cx_ref) }};
+        let js_value = {{ render_rs_to_js("value", type.value, mut_cx_ref) }};
+        js_map.call_method_with({{ mut_cx_ref }}, "set")?.arg(js_key).arg(js_value).exec({{ mut_cx_ref }})?;
+    }
+    js_map
+}
+{%- elif type.kind == "list" -%}
+{
+    // JsArray::new allocates with `undefined` value, that's why we `set` value
+    let js_array = JsArray::new({{ mut_cx_ref }}, {{ rs_value }}.len());
+    for (i, elem) in {{ rs_value }}.into_iter().enumerate() {
+        let js_elem = {{ render_rs_to_js("elem", type.elem, mut_cx_ref) }};
+        js_array.set({{ mut_cx_ref }}, i as u32, js_elem)?;
+    }
+    js_array
+}
+{%- elif type.kind == "set" -%}
+{
+    // JsArray::new allocates with `undefined` value, that's why we `set` value
+    let js_array = JsArray::new({{ mut_cx_ref }}, {{ rs_value }}.len());
+    for (i, elem) in {{ rs_value }}.into_iter().enumerate() {
+        let js_elem = {{ render_rs_to_js("elem", type.elem, mut_cx_ref) }};
+        js_array.set({{ mut_cx_ref }}, i as u32, js_elem)?;
+    }
+    js_array
+}
+{%- elif type.kind == "tuple" -%}
+{
+    let (
+    {%- for value in type.values -%}
+        {% set value_var_name = "x" ~ loop.index0 %}
+        {{- value_var_name }}{{ ", " if not loop.last else "" -}}
+    {%- endfor -%}
+    ) = {{ rs_value }};
+    let js_array = JsArray::new({{ mut_cx_ref }}, {{ type.values | length }});
+{% for value in type.values -%}
+    {% set value_var_name = "x" ~ loop.index0 %}
+    let js_value = {{ render_rs_to_js(value_var_name, value, mut_cx_ref) }};
+    js_array.set({{ mut_cx_ref }}, {{ loop.index0 }}, js_value)?;
+{% endfor %}
+    js_array
+}
+{%- elif type.kind == "optional" -%}
+match {{ rs_value }} {
+    Some(elem) => {
+        {{ render_rs_to_js("elem", type.elem, mut_cx_ref) }}.as_value({{ mut_cx_ref }})
+    }
+    None => JsNull::new({{ mut_cx_ref }}).as_value({{ mut_cx_ref }}),
+}
+{%- elif type.kind == "result" -%}
+match {{ rs_value }} {
+    Ok(ok) => {
+        let js_obj = JsObject::new({{ mut_cx_ref }});
+        let js_tag = JsBoolean::new({{ mut_cx_ref }}, true);
+        js_obj.set({{ mut_cx_ref }}, "ok", js_tag)?;
+        let js_value = {{ render_rs_to_js("ok", type.ok, mut_cx_ref) }};
+        js_obj.set({{ mut_cx_ref }}, "value", js_value)?;
+        js_obj
+    }
+    Err(err) => {
+        let js_obj = cx.empty_object();
+        let js_tag = JsBoolean::new({{ mut_cx_ref }}, false);
+        js_obj.set({{ mut_cx_ref }}, "ok", js_tag)?;
+        let js_err = {{ render_rs_to_js("err", type.err, mut_cx_ref) }};
+        js_obj.set({{ mut_cx_ref }}, "error", js_err)?;
+        js_obj
+    }
+}
+{%- elif type.kind == "none" -%}
+{
+    #[allow(clippy::let_unit_value)]
+    let _ = {{ rs_value }};
+    JsNull::new({{ mut_cx_ref }})
+}
+{%- elif type.kind == "bool" -%}
+JsBoolean::new({{ mut_cx_ref }}, {{ rs_value }})
+{%- elif type.kind == "u8_based" -%}
+JsNumber::new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_u8 -%}
+{
+    let custom_to_rs_u8 = {{ type.custom_to_rs_u8 }};
+    match custom_to_rs_u8({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif %}
+ as f64
+)
+{%- elif type.kind == "i32_based" -%}
+JsNumber::new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_i32 -%}
+{
+    let custom_to_rs_i32 = {{ type.custom_to_rs_i32 }};
+    match custom_to_rs_i32({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif %}
+ as f64
+)
+{%- elif type.kind == "u32_based" -%}
+JsNumber::new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_u32 -%}
+{
+    let custom_to_rs_u32 = {{ type.custom_to_rs_u32 }};
+    match custom_to_rs_u32({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif %}
+ as f64
+)
+{%- elif type.kind == "u64_based" -%}
+JsNumber::new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_u64 -%}
+{
+    let custom_to_rs_u64 = {{ type.custom_to_rs_u64 }};
+    match custom_to_rs_u64({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif %}
+ as f64
+)
+{%- elif type.kind == "i64_based" -%}
+JsNumber::new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_i64 -%}
+{
+    let custom_to_rs_i64 = {{ type.custom_to_rs_i64 }};
+    match custom_to_rs_i64({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif %}
+ as f64
+)
+{%- elif type.kind == "f64_based" -%}
+JsNumber::new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_f64 -%}
+{
+    let custom_to_rs_f64 = {{ type.custom_to_rs_f64 }};
+    match custom_to_rs_f64({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif -%}
+)
+{%- elif type.kind == "float" -%}
+JsNumber::new({{ mut_cx_ref }}, {{ rs_value }})
+{%- elif type.kind == "str" -%}
+JsString::try_new({{ mut_cx_ref }}, {{ rs_value }}).or_throw({{ mut_cx_ref }})?
+{%- elif type.kind == "str_based" -%}
+JsString::try_new({{ mut_cx_ref }},
+{%- if type.custom_to_rs_string -%}
+{
+    let custom_to_rs_string = {{ type.custom_to_rs_string }};
+    match custom_to_rs_string({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return cx.throw_type_error(err),
+    }
+}
+{%- else -%}
+{{ rs_value }}
+{%- endif -%}
+).or_throw({{ mut_cx_ref }})?
+{%- elif type.kind == "bytes" -%}
+{
+    let mut js_buff = JsArrayBuffer::new({{ mut_cx_ref }}, {{ rs_value }}.len())?;
+    let js_buff_slice = js_buff.as_mut_slice({{ mut_cx_ref }});
+    for (i, c) in {{ rs_value }}.iter().enumerate() {
+        js_buff_slice[i] = *c;
+    }
+    js_buff
+}
+{%- elif type.kind == "bytes_based" -%}
+{
+    let rs_buff = {
+        {%- if type.custom_to_rs_bytes -%}
+        let custom_to_rs_bytes = {{ type.custom_to_rs_bytes }};
+        match custom_to_rs_bytes({{ rs_value }}) {
+            Ok(ok) => ok,
+            Err(err) => return cx.throw_type_error(err),
+        }
+        {%- else -%}
+        {{ rs_value }}
+        {%- endif -%}
+    };
+    let mut js_buff = JsArrayBuffer::new({{ mut_cx_ref }}, rs_buff.len())?;
+    let js_buff_slice = js_buff.as_mut_slice({{ mut_cx_ref }});
+    for (i, c) in rs_buff.iter().enumerate() {
+        js_buff_slice[i] = *c;
+    }
+    js_buff
+}
+{%- elif type.kind == "struct" -%}
+{{ struct_rs_to_js_function_name(type) }}({{ mut_cx_ref }}, {{ rs_value }})?
+{%- elif type.kind == "variant" -%}
+{{ variant_rs_to_js_function_name(type) }}({{ mut_cx_ref }}, {{ rs_value }})?
+{%- elif type.kind == "enum" %}
+JsString::try_new({{ mut_cx_ref }}, {{ enum_rs_to_js_function_name(type) }}({{ rs_value }})).or_throw({{ mut_cx_ref }})?
+{%- else -%}
+{{ raise("Unsupported type %r" % type) }}
+{%- endif -%}
+{%- endmacro -%}
+
+
+{#-
+ # Structure-related macros
+ #}
+
+
+{%- macro struct_js_to_rs_function_name(struct) %}struct_{{ struct.name | pascal2snake }}_js_to_rs{% endmacro -%}
+{%- macro struct_rs_to_js_function_name(struct) %}struct_{{ struct.name | pascal2snake }}_rs_to_js{% endmacro -%}
+
+
+{%- macro render_struct_js_to_rs(struct) %}
+#[allow(dead_code)]
+fn {{ struct_js_to_rs_function_name(struct) }}<'a>(
+    cx: &mut impl Context<'a>,
+    obj: Handle<'a, JsObject>,
+) -> NeonResult<libparsec::{{ struct.name }}> {
+{% for attr_name, attr_type in struct.attributes.items() %}
+    let {{ attr_name }} = {
+        let js_val: Handle<{{ ts_type(attr_type) }}> = obj.get(cx, "{{ attr_name | snake2camel }}")?;
+        {{ render_downcasted_js_to_rs("js_val", attr_type, mut_cx_ref="cx") }}
+    };
+{% endfor %}
+{% if struct.custom_init is none %}
+    Ok(libparsec::{{ struct.name }} {
+        {{ struct.list_attributes() }}
+    })
+{% else %}
+    {
+        let custom_init = {{ struct.custom_init }};
+        custom_init({{ struct.list_attributes() }}).or_else(|e| cx.throw_error(e))
+    }
+{% endif%}
+}
+{% endmacro -%}
+
+
+{%- macro render_struct_rs_to_js(struct) %}
+#[allow(dead_code)]
+fn {{ struct_rs_to_js_function_name(struct) }}<'a>(
+    cx: &mut impl Context<'a>,
+    rs_obj: libparsec::{{ struct.name }},
+) -> NeonResult<Handle<'a, JsObject>> {
+    let js_obj = cx.empty_object();
+{% for attr_name, attr_type in struct.attributes.items() %}
+{% set custom_getter = struct.custom_getters.get(attr_name) %}
+{% if custom_getter is none %}
+    let js_{{ attr_name }} = {{ render_rs_to_js("rs_obj.%s" % attr_name, attr_type, mut_cx_ref="cx") }};
+{% else %}
+    let js_{{ attr_name }} = {
+        let custom_getter = {{ custom_getter }};
+        {{ render_rs_to_js("custom_getter(&rs_obj)", attr_type, mut_cx_ref="cx") }}
+    };
+{% endif %}
+    js_obj.set(cx, "{{ attr_name | snake2camel }}", js_{{ attr_name }})?;
+{% endfor %}
+    Ok(js_obj)
+}
+{% endmacro -%}
+
+
+{#-
+ # Variant-related macros
+ #}
+
+
+{%- macro variant_js_to_rs_function_name(variant) %}variant_{{ variant.name | pascal2snake }}_js_to_rs{% endmacro -%}
+{%- macro variant_rs_to_js_function_name(variant) %}variant_{{ variant.name | pascal2snake }}_rs_to_js{% endmacro -%}
+
+
+{%- macro render_variant_js_to_rs(variant) %}
+#[allow(dead_code)]
+fn {{ variant_js_to_rs_function_name(variant) }}<'a>(
+    cx: &mut impl Context<'a>,
+    obj: Handle<'a, JsObject>,
+) -> NeonResult<libparsec::{{ variant.name }}> {
+    let tag = obj.get::<JsString, _, _>(cx, "tag")?.value(cx);
+    match tag.as_str() {
+{% for value in variant.values %}
+        "{{ variant.name }}{{ value.name }}" => {
+{% if value.is_struct %}
+{% for attr_name, attr_type in value.struct.attributes.items() %}
+            let {{ attr_name }} = {
+                let js_val: Handle<{{ ts_type(attr_type) }}> = obj.get(cx, "{{ attr_name | snake2camel }}")?;
+                {{ render_downcasted_js_to_rs("js_val", attr_type, mut_cx_ref="cx") }}
+            };
+{% endfor %}
+            Ok(libparsec::{{ variant.name }}::{{ value.name }} {
+                {{ value.struct.list_attributes() }}
+            })
+{% elif value.is_tuple %}
+{% for attr_type in value.tuple %}
+            let x{{ loop.index0 }} = {
+                let js_val: Handle<{{ ts_type(attr_type) }}> = obj.get(cx, "x{{ loop.index0 }}")?;
+                {{ render_downcasted_js_to_rs("js_val", attr_type, mut_cx_ref="cx") }}
+            };
+{% endfor %}
+            Ok(libparsec::{{ variant.name }}::{{ value.name }} (
+{% for _ in value.tuple %}
+                x{{ loop.index0 }},
+{% endfor %}
+            ))
+{% else %}
+            Ok(libparsec::{{ variant.name }}::{{ value.name }})
+{% endif %}
+        },
+{% endfor %}
+        _ => cx.throw_type_error("Object is not a {{ variant.name }}"),
+    }
+}
+{% endmacro -%}
+
+
+{%- macro render_variant_rs_to_js(variant) %}
+#[allow(dead_code)]
+fn {{ variant_rs_to_js_function_name(variant) }}<'a>(
+    cx: &mut impl Context<'a>,
+    rs_obj: libparsec::{{ variant.name }},
+) -> NeonResult<Handle<'a, JsObject>> {
+    let js_obj = cx.empty_object();
+{% if variant.is_error_variant %}
+    let js_display = JsString::try_new(cx, &rs_obj.to_string()).or_throw(cx)?;
+    js_obj.set(cx, "error", js_display)?;
+{% endif %}
+    match rs_obj {
+{% for value in variant.values %}
+{% if value.is_struct %}
+        libparsec::{{ variant.name }}::{{ value.name }}{ {{ value.struct.list_attributes() }} .. } => {
+            let js_tag = JsString::try_new(cx, "{{ variant.name }}{{ value.name }}").or_throw(cx)?;
+            js_obj.set(cx, "tag", js_tag)?;
+{% for attr_name, attr_type in value.struct.attributes.items() %}
+        let js_{{ attr_name }} = {{ render_rs_to_js(attr_name, attr_type, mut_cx_ref="cx") }};
+        js_obj.set(cx, "{{ attr_name | snake2camel }}", js_{{ attr_name }})?;
+{% endfor %}
+        }
+{% elif value.is_tuple %}
+        libparsec::{{ variant.name }}::{{ value.name }}( {% for _ in value.tuple %}x{{ loop.index0 }},{% endfor %} .. ) => {
+            let js_tag = JsString::try_new(cx, "{{ value.name }}").or_throw(cx)?;
+            js_obj.set(cx, "tag", js_tag)?;
+{% for attr_type in value.tuple %}
+            let js_x{{ loop.index0 }} = {{ render_rs_to_js("x%s" % loop.index0, attr_type, mut_cx_ref="cx") }};
+            js_obj.set(cx, "x{{ loop.index0 }}", js_x{{ loop.index0 }})?;
+{% endfor %}
+        }
+{% else %}
+        libparsec::{{ variant.name }}::{{ value.name }} => {
+            let js_tag = JsString::try_new(cx, "{{ value.name }}").or_throw(cx)?;
+            js_obj.set(cx, "tag", js_tag)?;
+        }
+{% endif %}
+{% endfor %}
+    }
+    Ok(js_obj)
+}
+{% endmacro -%}
+
+{%- macro enum_js_to_rs_function_name(type) %}enum_{{ type.name | pascal2snake }}_js_to_rs{% endmacro -%}
+{%- macro enum_rs_to_js_function_name(type) %}enum_{{ type.name | pascal2snake }}_rs_to_js{% endmacro -%}
+
+{%- macro render_enum_rs_to_js(enum) %}
+#[allow(dead_code)]
+fn {{ enum_rs_to_js_function_name(enum) }}(value: libparsec::{{ enum.name }}) -> &'static str {
+    match value {
+{% for variant in enum.member_names %}
+        libparsec::{{ enum.name }}::{{ variant }} => "{{ enum.name + variant }}",
+{% endfor %}
+    }
+}
+{% endmacro -%}
+
+{%- macro render_enum_js_to_rs(enum) %}
+#[allow(dead_code)]
+fn {{ enum_js_to_rs_function_name(enum) }}<'a>(cx: &mut impl Context<'a>, raw_value: &str) -> NeonResult<libparsec::{{ enum.name }}> {
+    match raw_value {
+{% for variant in enum.member_names %}
+        "{{ enum.name + variant }}" => Ok(libparsec::{{ enum.name }}::{{ variant}}),
+{% endfor %}
+        _ => {
+            cx.throw_range_error(format!("Invalid value `{raw_value}` for enum {{ enum.name }}"))
+        }
+    }
+}
+{% endmacro -%}
+{#-
+ # Function-related macros
+ #}
+
+
+{%- macro render_async_function(meth) %}
+fn {{ meth.name }}(mut cx: FunctionContext) -> JsResult<JsPromise> {
+    crate::init_sentry();
+{# Convert params #}
+{% for param_name, param_type in meth.params.items() %}
+{% if param_type.kind == "optional" %}
+    let {{ param_name }} = match cx.argument_opt({{ loop.index0 }}) {
+        Some(v) => {
+            match v.downcast::<{{ ts_type(param_type.elem) }}, _>(&mut cx) {
+                Ok(js_val) => {
+                    Some({{ render_downcasted_js_to_rs("js_val", param_type.elem) }})
+                }
+                Err(_) => None,
+            }
+        },
+        None => None,
+    };
+{% else %}
+    let {{ param_name }} = {
+        let js_val = cx.argument::<{{ ts_type(param_type) }}>({{ loop.index0 }})?;
+        {{ render_downcasted_js_to_rs("js_val", param_type) }}
+    };
+{% endif %}
+{% endfor %}
+{# Call actual function #}
+    let channel = cx.channel();
+    let (deferred, promise) = cx.promise();
+
+    // TODO: Promises are not cancellable in Javascript by default, should we add a custom cancel method ?
+    let _handle = crate::TOKIO_RUNTIME.lock().expect("Mutex is poisoned").spawn(async move {
+
+{% if meth.return_type is none %}
+        libparsec::{{ meth.name }}(
+{% else %}
+        let ret = libparsec::{{ meth.name }}(
+{% endif %}
+{% for param_name, param_type in meth.params.items() %}
+            {{ maybe_ref(param_name, param_type) }},
+{% endfor %}
+        ).await;
+
+        deferred.settle_with(&channel, move |mut cx| {
+{% if meth.return_type is none %}
+            let js_ret = cx.null();
+{% else %}
+            let js_ret = {{ render_rs_to_js("ret", meth.return_type) }};
+{% endif %}
+            Ok(js_ret)
+        });
+    });
+
+    Ok(promise)
+}
+{% endmacro -%}
+
+
+{%- macro render_sync_function(meth) %}
+fn {{ meth.name }}(mut cx: FunctionContext) -> JsResult<JsPromise> {
+    crate::init_sentry();
+{# Convert params #}
+{% for param_name, param_type in meth.params.items() %}
+{% if param_type.kind == "optional" %}
+    let {{ param_name }} = match cx.argument_opt({{ loop.index0 }}) {
+        Some(v) => {
+            match v.downcast::<{{ ts_type(param_type.elem) }}, _>(&mut cx) {
+                Ok(js_val) => {
+                    Some({{ render_downcasted_js_to_rs("js_val", param_type.elem) }})
+                }
+                Err(_) => None,
+            }
+        },
+        None => None,
+    };
+{% else %}
+    let {{ param_name }} = {
+        let js_val = cx.argument::<{{ ts_type(param_type) }}>({{ loop.index0 }})?;
+        {{ render_downcasted_js_to_rs("js_val", param_type) }}
+    };
+{% endif %}
+{% endfor %}
+{# Call actual function #}
+{% if meth.return_type is none %}
+    libparsec::{{ meth.name }}(
+{% else %}
+    let ret = libparsec::{{ meth.name }}(
+{% endif %}
+{% for param_name, param_type in meth.params.items() %}
+    {{ maybe_ref(param_name, param_type) }},
+{% endfor %}
+    );
+{# Convert return value #}
+{% if meth.return_type is none %}
+    let js_ret = cx.null();
+{% else %}
+    let js_ret = {{ render_rs_to_js("ret", meth.return_type) }};
+{% endif %}
+{# Resolve promise #}
+    let (deferred, promise) = cx.promise();
+    deferred.resolve(&mut cx, js_ret);
+    Ok(promise)
+}
+{% endmacro -%}
+
+
+{#- End of macros #}
+
+/*
+ * /!\ Auto-generated code (see `bindings/generator`), any modification will be lost ! /!\
+ */
+{% if api.rust_code_to_inject is not none %}
+{{ api.rust_code_to_inject }}
+{% endif %}
+
+#[allow(unused_imports)]
+use neon::{prelude::*, types::buffer::TypedArray};
+{# Enum #}
+{% for enum in api.enums %}
+
+// {{ enum.name}}
+
+{{ render_enum_js_to_rs(enum) }}
+
+{{ render_enum_rs_to_js(enum) }}
+
+{% endfor %}
+{# Structures #}
+{% for struct in api.structs %}
+
+// {{ struct.name }}
+
+{{ render_struct_js_to_rs(struct) }}
+
+{{ render_struct_rs_to_js(struct) }}
+{% endfor %}
+{# Variants #}
+{% for variant in api.variants %}
+
+// {{ variant.name }}
+
+{% if not variant.is_error_variant %}
+{{ render_variant_js_to_rs(variant) }}
+{% endif %}
+
+{{ render_variant_rs_to_js(variant) }}
+{% endfor %}
+
+{% for meth in api.meths %}
+
+// {{ meth.name }}
+{% if meth.is_async %}
+{{ render_async_function(meth) }}
+{% else %}
+{{ render_sync_function(meth) }}
+{% endif %}
+{% endfor %}
+
+pub fn register_meths(cx: &mut ModuleContext) -> NeonResult<()> {
+{% for meth in api.meths %}
+    cx.export_function("{{ meth.name | snake2camel }}", {{ meth.name }})?;
+{% endfor %}
+    Ok(())
+}

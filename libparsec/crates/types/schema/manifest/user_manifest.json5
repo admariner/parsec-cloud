@@ -1,0 +1,30 @@
+{
+    "label": "UserManifest",
+    "type": "user_manifest",
+    "other_fields": [
+        {
+            "name": "author",
+            "type": "DeviceID"
+        },
+        {
+            "name": "timestamp",
+            "type": "DateTime"
+        },
+        {
+            "name": "id",
+            "type": "VlobID"
+        },
+        {
+            "name": "version",
+            "type": "Version"
+        },
+        {
+            "name": "created",
+            "type": "DateTime"
+        },
+        {
+            "name": "updated",
+            "type": "DateTime"
+        }
+    ]
+}

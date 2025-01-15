@@ -1,3 +1,5 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
 # Sequester - Protocol & Data API evolutions
 
 From [ISSUE-2464](https://github.com/Scille/parsec-cloud/issues/2464)
@@ -66,8 +68,8 @@ class VlobCreateReqSchema(BaseReqSchema):
     encryption_revision = fields.Integer(required=True)
     vlob_id = VlobIDField(required=True)
     # If blob contains a signed message, it timestamp cannot be directly enforced
-    # by the backend (given the message is probably also encrypted).
-    # Hence the timestamp is passed in clear so backend can reject the message
+    # by the server (given the message is probably also encrypted).
+    # Hence the timestamp is passed in clear so server can reject the message
     # if it considers the timestamp invalid. On top of that each client asking
     # for the message will receive the declared timestamp to check against
     # the actual timestamp within the message.
@@ -91,7 +93,7 @@ class VlobUpdateReqSchema(BaseReqSchema):
 
 EDIT: change sequester_blob key type to UUID
 
-In case the client send a `vlob_update/vlob_create` command without the right `sequester_blob` parameter (i.e. missing or unknown sequester encryption key) a specific error is returned:
+In case the client sends a `vlob_update/vlob_create` command without the right `sequester_blob` parameter (i.e. missing or unknown sequester encryption key) a specific error is returned:
 
 ```python
 class VlobCreateSequesterBlobErrorSchema(...):

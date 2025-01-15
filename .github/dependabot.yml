@@ -5,38 +5,26 @@ updates:
   #################
 
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/setup-python-poetry
+      - /.github/actions/use-pre-commit
     pull-request-branch-name:
       separator: "-"
+    labels:
+      - I-Dependency
+      - I-Github-Actions
     schedule:
-      interval: monthly
-      time: "00:30"
+      interval: weekly
+      day: monday
+      time: "04:20"
       timezone: Europe/Paris
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     rebase-strategy: disabled
-
-  - package-ecosystem: github-actions
-    directory: /.github/actions/setup-python-poetry
-    pull-request-branch-name:
-      separator: "-"
-    schedule:
-      interval: monthly
-      time: "00:30"
-      timezone: Europe/Paris
-    open-pull-requests-limit: 5
-    rebase-strategy: disabled
-
-  - package-ecosystem: github-actions
-    directory: /.github/actions/use-pre-commit
-    pull-request-branch-name:
-      separator: "-"
-    schedule:
-      interval: monthly
-      time: "00:30"
-      timezone: Europe/Paris
-    open-pull-requests-limit: 5
-    rebase-strategy: disabled
-
 
   ########
   # Rust #
@@ -46,10 +34,23 @@ updates:
     directory: /
     pull-request-branch-name:
       separator: "-"
+    labels:
+      - I-Dependency
+      - I-Rust
+    ignore:
+      # `console_error_panic_hook@0.1.7` point to a commit that isn't present in the source repo
+      - dependency-name: console_error_panic_hook
+        versions:
+          - 0.1.7
     schedule:
-      interval: monthly
-      time: "00:30"
+      interval: weekly
+      day: monday
+      time: "04:20"
       timezone: Europe/Paris
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     rebase-strategy: disabled
 
@@ -58,17 +59,64 @@ updates:
   ##########
 
   - package-ecosystem: pip
-    directory: /
+    directories:
+      - /server
+      - /docs
     ignore:
-      - dependency-name: toastedmarshmallow
-      - dependency-name: trio_typing
       - dependency-name: typing-extensions
+      - dependency-name: anyio
+        versions:
+          - ">=4.0.0"
     pull-request-branch-name:
       separator: "-"
+    labels:
+      - I-Dependency
+      - I-Python
     schedule:
-      interval: monthly
-      time: "23:30"
+      interval: weekly
+      day: monday
+      time: "04:20"
       timezone: Europe/Paris
+    groups:
+      pytest:
+        patterns:
+          - hypothesis
+          - pytest*
+      pytools:
+        patterns:
+          - cibuildwheel
+          - deptry
+          - editorconfig-checker
+          - maturin
+          - patchelf
+          - pyright
+          - ruff
+          - setuptools
+      pydocs:
+        patterns:
+          - docutils
+          - poutils
+          - sphinx*
+      pydeps:
+        patterns:
+          - "*"
+        exclude-patterns:
+          # pytest
+          - hypothesis
+          - pytest*
+          # pydocs
+          - docutils
+          - poutils
+          - sphinx*
+          # pytools
+          - cibuildwheel
+          - deptry
+          - editorconfig-checker
+          - maturin
+          - patchelf
+          - pyright
+          - ruff
+          - setuptools
     open-pull-requests-limit: 5
     rebase-strategy: disabled
 
@@ -77,45 +125,87 @@ updates:
   ##############
 
   - package-ecosystem: npm
-    directory: /oxidation/client
+    directory: /client
     pull-request-branch-name:
       separator: "-"
+    labels:
+      - I-Dependency
+      - I-Javascript
     schedule:
-      interval: monthly
-      time: "23:30"
+      interval: weekly
+      day: monday
+      time: "04:20"
+      timezone: Europe/Paris
+    groups:
+      ionic-client:
+        patterns:
+          - "@ionic/*"
+      capacitor-client:
+        patterns:
+          - "@capacitor/*"
+          - "@capacitor-community/*"
+      client-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@ionic/*"
+          - "@capacitor/*"
+          - "@capacitor-community/*"
+
+    open-pull-requests-limit: 5
+    rebase-strategy: disabled
+
+  - package-ecosystem: npm
+    directory: /client/electron
+    pull-request-branch-name:
+      separator: "-"
+    labels:
+      - I-Dependency
+      - I-Javascript
+    ignore:
+      # `electron-is-dev@3` require to build the electron app in ESM mode, but capacitor doesn't support it yet.
+      - dependency-name: electron-is-dev
+        versions: [^3.0.0]
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:20"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    groups:
+      desktop-updates:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - electron
+    rebase-strategy: disabled
+
+  - package-ecosystem: npm
+    directory: /bindings/electron
+    pull-request-branch-name:
+      separator: "-"
+    labels:
+      - I-Dependency
+      - I-Javascript
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:20"
       timezone: Europe/Paris
     open-pull-requests-limit: 5
     rebase-strategy: disabled
 
   - package-ecosystem: npm
-    directory: /oxidation/client/electron
+    directory: /bindings/web
     pull-request-branch-name:
       separator: "-"
+    labels:
+      - I-Dependency
+      - I-Javascript
     schedule:
-      interval: monthly
-      time: "23:30"
-      timezone: Europe/Paris
-    open-pull-requests-limit: 5
-    rebase-strategy: disabled
-
-  - package-ecosystem: npm
-    directory: /oxidation/bindings/electron
-    pull-request-branch-name:
-      separator: "-"
-    schedule:
-      interval: monthly
-      time: "23:30"
-      timezone: Europe/Paris
-    open-pull-requests-limit: 5
-    rebase-strategy: disabled
-
-  - package-ecosystem: npm
-    directory: /oxidation/bindings/web
-    pull-request-branch-name:
-      separator: "-"
-    schedule:
-      interval: monthly
-      time: "23:30"
+      interval: weekly
+      day: monday
+      time: "04:20"
       timezone: Europe/Paris
     open-pull-requests-limit: 5
     rebase-strategy: disabled
@@ -124,35 +214,59 @@ updates:
     directory: /.cspell
     pull-request-branch-name:
       separator: "-"
+    labels:
+      - I-Dependency
+      - I-Javascript
     schedule:
-      interval: monthly
-      time: "23:30"
+      interval: weekly
+      day: monday
+      time: "04:20"
       timezone: Europe/Paris
+    groups:
+      cspell-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 1
     rebase-strategy: disabled
 
-  ########
-  # Java #
-  ########
+  # ########
+  # # Java #
+  # ########
 
-  - package-ecosystem: gradle
-    directory: /oxidation/client/android
-    pull-request-branch-name:
-      separator: "-"
-    schedule:
-      interval: monthly
-      time: "23:30"
-      timezone: Europe/Paris
-    open-pull-requests-limit: 5
-    rebase-strategy: disabled
+  # - package-ecosystem: gradle
+  #   directory: /client/android
+  #   pull-request-branch-name:
+  #     separator: "-"
+  #   labels:
+  #     - I-Dependency
+  #     - I-Java
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #     time: "04:20"
+  #     timezone: Europe/Paris
+  #   groups:
+  #     android-client:
+  #       patterns:
+  #         - "*"
+  #   open-pull-requests-limit: 5
+  #   rebase-strategy: disabled
 
-  - package-ecosystem: gradle
-    directory: /oxidation/bindings/android
-    pull-request-branch-name:
-      separator: "-"
-    schedule:
-      interval: monthly
-      time: "23:30"
-      timezone: Europe/Paris
-    open-pull-requests-limit: 5
-    rebase-strategy: disabled
+  # - package-ecosystem: gradle
+  #   directory: /bindings/android
+  #   pull-request-branch-name:
+  #     separator: "-"
+  #   labels:
+  #     - I-Dependency
+  #     - I-Java
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #     time: "04:20"
+  #     timezone: Europe/Paris
+  #   groups:
+  #     android-binding:
+  #       patterns:
+  #         - "*"
+  #   open-pull-requests-limit: 5
+  #   rebase-strategy: disabled

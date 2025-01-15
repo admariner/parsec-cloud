@@ -1,0 +1,141 @@
+name: package-cli
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version to use
+        type: string
+        required: true
+      version_patch_run_id:
+        description: |
+          The run id where the version.patch artifact was uploaded.
+          If not provided, the workflow will generate the patch by itself.
+        type: string
+        required: true
+      commit_sha:
+        required: true
+        type: string
+        description: The commit SHA to use when checkout'ing the repository
+        default: ${{ github.sha }}
+  # PS: If you trigger manually the packaging, take into account that it will use the workflow as defined in the main branch not in the target branch.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to use (if not provided will generated one from the code space version)
+        type: string
+        required: false
+  pull_request:
+    paths:
+      - .github/workflows/package-cli.yml
+
+# We set `concurrency` to prevent having this workflow being run on code that is not up-to-date on a PR (a user make multiple push in a quick manner).
+# But on the main branch, we don't want that behavior.
+# Having the workflow run on each merge commit is something we would like, that could help us where a regression was made and missed by previous checks.
+#
+# For that we use `head_ref` that is only defined on `pull-request` and fallback to `run_id` (this is a counter, so it's value is unique between workflow call).
+concurrency:
+  group: package-cli-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    if: ${{ inputs.version_patch_run_id == '' }}
+    uses: ./.github/workflows/_parse_version.yml
+    with:
+      version: ${{ inputs.version }}
+      commit_sha: ${{ inputs.commit_sha }}
+
+  package-cli:
+    needs: version
+    # Always run the job if `version` job is skipped otherwise only if `version` job was successful.
+    if: ${{ inputs.version_patch_run_id != '' && always() || success() }}
+    name: 📦 Packaging CLI for linux 🐧
+    runs-on: ubuntu-24.04
+    env:
+      cross-version: v0.2.5
+    strategy:
+      fail-fast: false
+      # Parsec CLI has three potential dynamic dependencies: `libc`, `fuse3` and `openssl`, hence we have two build strategy here:
+      matrix:
+        include:
+          # The MUSL target provide a statically linked CLI
+          - target: x86_64-unknown-linux-musl
+            suffix: linux-x86_64-musl
+          # The GNU target provide a dynamically linked CLI
+          - target: x86_64-unknown-linux-gnu
+            suffix: linux-x86_64-gnu
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+        timeout-minutes: 5
+
+      - name: Retrieve runner specs
+        id: runner-specs
+        uses: ./.github/actions/system-info
+        timeout-minutes: 1
+
+      - name: Download version.patch artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # pin v4.1.8
+        with:
+          name: version.patch
+          path: ${{ runner.temp }}/version.patch
+          run-id: ${{ inputs.version_patch_run_id || github.run_id }}
+        timeout-minutes: 2
+
+      - name: Load version config
+        id: version
+        run: tee "$GITHUB_OUTPUT" < ${{ runner.temp }}/version.patch/version.ini
+        timeout-minutes: 1
+
+      - name: Apply version.patch
+        run: git apply --allow-empty ${{ runner.temp }}/version.patch/version.patch
+        timeout-minutes: 1
+
+      - name: Use Cross
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/cross-download"
+          mkdir "$dir"
+          echo "$dir" >> $GITHUB_PATH
+          cd "$dir"
+          curl -LO "https://github.com/cross-rs/cross/releases/download/${{ env.cross-version }}/cross-x86_64-unknown-linux-musl.tar.gz"
+          tar xf cross-x86_64-unknown-linux-musl.tar.gz
+        timeout-minutes: 5
+
+      - name: Build CLI
+        shell: bash -o pipefail -eux {0}
+        run: >-
+          cross build -p parsec-cli
+          --target=${{ matrix.target }}
+          $(python make.py cli-release-cargo-flags --quiet)
+        env:
+          LIBPARSEC_FORCE_VENDORED_LIBS: ${{ matrix.target == 'x86_64-unknown-linux-musl' && 'true' || 'false' }}
+        timeout-minutes: 15
+
+      - name: Debug target folder
+        if: runner.debug || false
+        shell: bash
+        run: tree target
+        timeout-minutes: 1
+
+      - name: Rename CLI artifact
+        id: rename
+        shell: bash
+        run: |
+          FINAL_ARTIFACT_NAME="parsec-cli_${{ steps.version.outputs.full }}_${{ matrix.suffix }}"
+          cp -v target/${{ matrix.target }}/release/parsec-cli ${{ runner.temp }}/$FINAL_ARTIFACT_NAME
+          echo "artifact_name=$FINAL_ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        timeout-minutes: 1
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: ${{ runner.os }}-${{ matrix.target }}-cli
+          path: |
+            ${{ runner.temp }}/${{ steps.rename.outputs.artifact_name }}
+          if-no-files-found: error
+        timeout-minutes: 5

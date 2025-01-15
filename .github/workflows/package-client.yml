@@ -1,0 +1,470 @@
+name: Package client
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/package-client.yml
+      - client/electron/package.js
+      - client/electron/snap/*
+  workflow_call:
+    inputs:
+      version:
+        description: The version to use
+        type: string
+        required: true
+      version_patch_run_id:
+        description: |
+          The run id where the version.patch artifact was uploaded.
+          If not provided, the workflow will generate the patch by itself.
+        type: string
+        required: true
+      commit_sha:
+        required: true
+        type: string
+        description: The commit SHA to use when checkout'ing the repository
+        default: ${{ github.sha }}
+      nightly_build:
+        type: boolean
+        description: The current build is a nightly build
+        default: false
+    secrets:
+      SENTRY_AUTH_TOKEN:
+        required: true
+      MACOS_CI_KEYCHAIN_PASSWD:
+        required: true
+      MACOS_CERT_PASSWD:
+        required: true
+      MACOS_CERT:
+        required: true
+      MACOS_CERT_COMMON_NAME:
+        required: true
+      MACOS_NOTARIZATION_TEAM_ID:
+        required: true
+      MACOS_NOTARIZATION_APPLE_ID:
+        required: true
+      MACOS_NOTARIZATION_PASSWD:
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to use (if not provided, will generate one from code space version)
+        type: string
+        required: false
+
+# Set `concurrency` to prevent this workflow from being run on code that is not up-to-date on a PR (e.g. when making many push quickly on a PR).
+# This behavior is only intended for a PR and not for merge commits on the main branch. Having the workflow run on each merge commit can be useful to spot regressions missed by previous checks.
+# To distinguish between these cases, we use `head_ref` that is only defined on `pull-request` and fallback to `run_id` (this is a counter, so it's value is unique between workflow call).
+concurrency:
+  group: package-client-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # We use the version 18.12 because the version >= 18.13 have some breaking changes on how they format the date.
+  # That would break our unit test if we don't update them.
+  node-version: 18.12.0
+  wasm-pack-version: 0.12.1
+  WINFSP_VERSION: 2.0.23075
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    if: ${{ inputs.version_patch_run_id == '' }}
+    uses: ./.github/workflows/_parse_version.yml
+    with:
+      version: ${{ inputs.version }}
+      commit_sha: ${{ inputs.commit_sha }}
+
+  webapp:
+    needs: version
+    # Always run the job if `version` job is skipped otherwise only if `version` job was successful.
+    if: ${{ inputs.version_patch_run_id != '' && always() || success() }}
+    runs-on: ubuntu-22.04
+    name: ⚡ Package web app
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+        timeout-minutes: 5
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # pin v4.1.0
+        with:
+          node-version: ${{ env.node-version }}
+        timeout-minutes: 2
+
+      - name: Download version.patch artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # pin v4.1.8
+        with:
+          name: version.patch
+          path: ${{ runner.temp }}/version.patch
+          run-id: ${{ inputs.version_patch_run_id || github.run_id }}
+
+      - name: Apply version.patch
+        run: git apply --allow-empty ${{ runner.temp }}/version.patch/version.patch
+
+      - name: Install dependencies
+        run: npm clean-install
+        working-directory: client
+
+      # Install syft
+      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # pin v2.47.11
+        with:
+          tool: syft@0.84.0, wasm-pack@${{ env.wasm-pack-version }}
+
+      - name: Build web bindings
+        run: npm run build:release
+        working-directory: bindings/web
+
+      - name: Build web app
+        run: npm run web:release
+        env:
+          PARSEC_APP_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        working-directory: client
+
+      - name: Generate SBOM
+        run: syft packages --config=.syft.yaml --output=spdx-json=client/dist/Parsec-SBOM-Web.spdx.json .
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: webapp
+          path: client/dist/
+          if-no-files-found: error
+
+  electron-snap:
+    needs: version
+    runs-on: ubuntu-22.04
+    # Always run the job if `version` job is skipped otherwise only if `version` job was successful.
+    if: inputs.version_patch_run_id != '' && always() || success()
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+        timeout-minutes: 5
+
+      - name: Download version.patch artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # pin v4.1.8
+        with:
+          name: version.patch
+          path: ${{ runner.temp }}/version.patch
+          run-id: ${{ inputs.version_patch_run_id || github.run_id }}
+
+      - name: Load version config
+        id: version
+        shell: bash
+        run: |
+          cat version.patch/version.ini > "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+        working-directory: ${{ runner.temp }}
+
+      - name: Apply version.patch
+        run: git apply --allow-empty ${{ runner.temp }}/version.patch/version.patch
+
+      # In case this step timeout, check the status of snapcraft.io at https://status.snapcraft.io/
+      - name: Install snapcraft
+        uses: samuelmeuli/action-snapcraft@fceeb3c308e76f3487e72ef608618de625fb7fe8 # pin v3.0.1
+        timeout-minutes: 15
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@54a5806e490d92e207b57183cf111ed54bbdeff4 # pin v0.1.2
+        timeout-minutes: 2
+
+      - name: Patch snapcraft for nightly build
+        if: inputs.nightly_build
+        run:
+          sed -i 's/node package.js --mode prod --platform linux dir/& --nightly/' snap/snapcraft.yaml
+        working-directory: client/electron
+
+      # We need to patch the vite.config.js because we cannot pass the secret to the snap build (either via build-args or env).
+      # Build we only do that is the event is not a PR from dependabot (because it does not have access to secrets, thus failing the build).
+      - name: Patch vite config for snap build
+        if: (!(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'))
+        run: >-
+          sed -i
+          -e s'/if (process.env.PARSEC_APP_SENTRY_AUTH_TOKEN)/if (true)/'
+          -e s';authToken: process.env.PARSEC_APP_SENTRY_AUTH_TOKEN;authToken: "${{ secrets.SENTRY_AUTH_TOKEN }}";'
+          vite.config.ts
+        working-directory: client
+
+      # We only patch snapcraft.yaml is the event is not a PR from dependabot (because it does not have access to secrets, thus failing the build).
+      - name: Patch snapcraft file for sentry auth token
+        if: (!(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'))
+        run: >-
+          sed -i -e s';SENTRY_AUTH_TOKEN: __TOKEN__;SENTRY_AUTH_TOKEN: "${{ secrets.SENTRY_AUTH_TOKEN }}";' snap/snapcraft.yaml
+        working-directory: client/electron
+
+      - name: Patch snapcraft file for vite mode
+        run: >-
+          sed -i -e s'/VITE_MODE: development/VITE_MODE: ${{ steps.version.outputs.type }}/' snap/snapcraft.yaml
+        working-directory: client/electron
+
+      - name: Build snap
+        run: |
+          ln -sv client/electron/snap
+          snapcraft pack --use-lxd -v
+        timeout-minutes: 30
+
+      - name: Rename artifacts
+        shell: bash
+        run: |
+          ARCH=$(uname -m)
+          mv -v parsec_*_*.snap Parsec_${{ steps.version.outputs.full }}_linux_$ARCH.snap
+
+      # Install syft
+      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # pin v2.47.11
+        with:
+          tool: syft@0.84.0
+
+      - name: Generate SBOM
+        run: syft packages --config=.syft.yaml --output=spdx-json=Parsec-SBOM-Electron-linux-snap.spdx.json .
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: linux-snap-${{ runner.arch }}-electron
+          path: |
+            Parsec_${{ steps.version.outputs.full }}_linux_*.snap
+            Parsec-SBOM-*.spdx.json
+          if-no-files-found: error
+        timeout-minutes: 10
+
+  electron-non-snap:
+    needs: version
+    # Always run the job if `version` job is skipped otherwise only if `version` job was successful.
+    if: ${{ inputs.version_patch_run_id != '' && always() || success() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 🏁 Windows
+            platform: windows
+            os: windows-2022
+            raw_latest_file: latest.yml
+            extension: exe
+            os_alias: win
+            artifact_tag: windows-exe
+          - name: 🍎 macOS
+            platform: macos
+            os: macos-13
+            raw_latest_file: latest-mac.yml
+            extension: "*" # Use wildcard to match dmg and zip extension
+            os_alias: mac
+            artifact_tag: macos-dmg
+          - name: 🐧 AppImage 4 Linux
+            platform: linux
+            os: ubuntu-22.04
+            raw_latest_file: latest-linux.yml
+            os_alias: linux
+            extension: AppImage
+            artifact_tag: linux-appimage
+    name: "${{matrix.name }}: ⚡ Package electron"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+        timeout-minutes: 5
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # pin v4.1.0
+        with:
+          node-version: ${{ env.node-version }}
+        timeout-minutes: 2
+
+      - name: Download version.patch artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # pin v4.1.8
+        with:
+          name: version.patch
+          path: ${{ runner.temp }}/version.patch
+          run-id: ${{ inputs.version_patch_run_id || github.run_id }}
+
+      - name: Load version config
+        id: version
+        shell: bash
+        run: |
+          cat version.patch/version.ini > "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+        working-directory: ${{ runner.temp }}
+
+      - name: Apply version.patch
+        run: git apply --allow-empty ${{ runner.temp }}/version.patch/version.patch
+
+      - name: Windows > Install WinFSP
+        if: matrix.platform == 'windows'
+        shell: bash -eux {0}
+        run: |
+          choco install winfsp -y --version=${{ env.WINFSP_VERSION }}
+          curl -L https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-tests-${{ env.WINFSP_VERSION }}.zip -o D:/a/_temp/winfsp-tests.zip
+          unzip D:/a/_temp/winfsp-tests.zip -d D:/a/_temp/
+          mv 'D:/a/_temp/winfsp-tests-x64.exe' 'C:/Program Files (x86)/WinFsp/bin/'
+        timeout-minutes: 2
+
+      - name: MacOS > Install macFUSE
+        if: matrix.platform == 'macos'
+        run: brew install --cask macfuse
+        timeout-minutes: 5
+
+      - name: Linux > Install system dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get install -y fuse3 libfuse3-dev libdbus-1-dev
+        timeout-minutes: 2
+
+      - name: Setup rust cache for debugging
+        if: false
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # pin v2.7.7
+        with:
+          cache-on-failure: true
+          save-if: true
+        timeout-minutes: 5
+
+      - name: Install client dependencies
+        # Use `--ignore-scripts` to prevent the postinstall script trying to be smarter than us and
+        # install electron dependencies (as it would use `npm install` instead of `npm clean-install`).
+        run: npm clean-install --ignore-scripts
+        working-directory: client
+        timeout-minutes: 10
+
+      - name: Install electron dependencies
+        run: npm clean-install
+        working-directory: client/electron
+        timeout-minutes: 2
+
+      - name: Install electron bindings dependencies
+        run: npm clean-install
+        working-directory: bindings/electron
+        timeout-minutes: 1
+
+      - name: Build Electron bindings
+        run: npm run build:release
+        working-directory: bindings/electron
+        # MacOS is really slow when build rust
+        timeout-minutes: 30
+
+      - name: Build client for electron
+        run: npm run native:build -- --mode ${{ steps.version.outputs.type }}
+        working-directory: client
+        timeout-minutes: 5
+
+      - name: Copy client build result to electron
+        run: npm exec cap copy @capacitor-community/electron
+        working-directory: client
+        timeout-minutes: 1
+
+      # Do not prepare codesign if the PR is from dependabot (it does not have access to secrets).
+      - name: Prepare codesign
+        shell: bash -o pipefail -eux {0}
+        if: matrix.platform == 'macos' && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
+        run: |
+          printenv MACOS_CERT | base64 --decode > certificate.p12
+
+          security create-keychain -p "${{ secrets.MACOS_CI_KEYCHAIN_PASSWD }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.MACOS_CI_KEYCHAIN_PASSWD }}" build.keychain
+          security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_CERT_PASSWD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.MACOS_CI_KEYCHAIN_PASSWD }}" build.keychain
+        env:
+          MACOS_CERT: ${{ secrets.MACOS_CERT }}
+        timeout-minutes: 2
+
+      - name: Build Electron apps
+        # What's about the extra `--` in `-- --nightly`?
+        # The reason is for npm to pass the flag `--nightly` to the underlying npm script.
+        # But since the base npm script `npm run electron:release` call another npm script,
+        # we need to escape the flag another time by adding another `--`.
+        shell: bash -eux -o pipefail {0}
+        run: |
+          if ${{ matrix.platform == 'macos' }}; then
+            # export DEBUG='electron-notarize*'
+            export CSC_LINK='${{ secrets.MACOS_CERT }}'
+            export CSC_KEY_PASSWORD='${{ secrets.MACOS_CERT_PASSWD }}'
+            export CSC_NAME='${{ secrets.MACOS_CERT_COMMON_NAME }}'
+            export CSC_IDENTITY_AUTO_DISCOVERY=true
+            export CSC_KEYCHAIN=build.keychain
+            export APPLE_TEAM_ID='${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}'
+            export APPLE_ID='${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}'
+            export APPLE_APP_SPECIFIC_PASSWORD='${{ secrets.MACOS_NOTARIZATION_PASSWD }}'
+          fi
+          npm run electron:release \
+            ${{ (matrix.platform == 'linux' || inputs.nightly_build || matrix.platform == 'macos') && '--' || '' }} \
+            ${{ matrix.platform == 'linux' && 'appimage' || '' }} \
+            ${{ inputs.nightly_build && '--nightly' || '' }} \
+            ${{ matrix.platform == 'macos' && '--sign' || ''}}
+        env:
+          PARSEC_APP_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        working-directory: client/electron
+        timeout-minutes: 10
+
+      # Do not upload sourcemaps if it's a PR from dependabot because it does not have access to secrets.
+      - name: Upload client electron sourcemaps
+        if: (!(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'))
+        run: npm run sentry:sourcemaps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        working-directory: client/electron
+        timeout-minutes: 1
+
+      # Install syft
+      - uses: taiki-e/install-action@c87777c3160ce0cfd8fc286df47224d2449cb76b # pin v2.47.11
+        with:
+          tool: syft@0.84.0
+
+      - name: Generate SBOM
+        run: syft packages --config=.syft.yaml --output=spdx-json=client/electron/dist/Parsec-SBOM-Electron-${{ matrix.artifact_tag }}.spdx.json .
+
+      - name: Debug dist folder
+        if: runner.debug || false
+        run: ls client/electron/dist
+
+      - name: Build info
+        id: build-info
+        shell: bash
+        run: |
+          arch=$(uname -m)
+          app_file="Parsec_${{ steps.version.outputs.full }}_${{ matrix.os_alias }}_${arch}${{ (matrix.platform == 'windows' || matrix.platform == 'linux') && '.unsigned' || '' }}.${{ matrix.extension }}"
+          latest_file="latest-${{ matrix.os_alias }}-${arch}.yml"
+
+          cat << EOF | tee -a $GITHUB_OUTPUT
+          arch=$arch
+          app_file=$app_file
+          latest_file=$latest_file
+          EOF
+
+      - name: Rename "latest" file
+        shell: bash
+        run: mv -v "${{ matrix.raw_latest_file }}" "${{ steps.build-info.outputs.latest_file }}"
+        working-directory: client/electron/dist
+
+      - name: Sanity check that "latest" file contain the correct application file
+        shell: bash
+        run: |
+          cat "${{ steps.build-info.outputs.latest_file }}"
+          grep -q -e "${{ steps.build-info.outputs.app_file }}" "${{ steps.build-info.outputs.latest_file }}"
+        working-directory: client/electron/dist
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        with:
+          name: ${{ matrix.artifact_tag }}-${{ runner.arch }}-electron
+          path: |
+            client/electron/dist/${{ steps.build-info.outputs.app_file }}
+            client/electron/dist/${{ steps.build-info.outputs.app_file }}.blockmap
+            client/electron/dist/${{ steps.build-info.outputs.latest_file }}
+            client/electron/dist/Parsec-SBOM-*.spdx.json
+          if-no-files-found: error
+        timeout-minutes: 10
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # pin v4.6.0
+        if: matrix.platform == 'windows'
+        with:
+          name: ${{ matrix.artifact_tag }}-${{ runner.arch }}-electron-pre-built
+          path: |
+            client/electron/app
+            client/electron/build
+            client/electron/assets
+            client/electron/scripts
+            client/electron/package.js
+            client/electron/package.json
+            client/electron/package-lock.json
+            client/electron/sign-windows-package.cmd
+            client/electron/README.md
+          if-no-files-found: error
+        timeout-minutes: 10

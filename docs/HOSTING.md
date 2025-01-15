@@ -1,28 +1,29 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
 # Hosting Server
 
-- [Hosting Server](#hosting-server)
-  - [Requirements](#requirements)
-  - [Hosting](#hosting)
-  - [Installation](#installation)
-  - [Run](#run)
-  - [Settings](#settings)
-    - [Host](#host)
-    - [Port](#port)
-    - [Database URL](#database-url)
-    - [Database connections](#database-connections)
-    - [Blockstore URL](#blockstore-url)
-    - [Administration token](#administration-token)
-    - [SSL](#ssl)
-    - [Logs](#logs)
-    - [Email](#email)
-    - [Webhooks](#webhooks)
-    - [SSE Keepalive](#sse-keepalive)
-    - [Sentry](#sentry)
-    - [Debug](#debug)
+- [Requirements](#requirements)
+- [Hosting](#hosting)
+- [Installation](#installation)
+- [Run](#run)
+- [Settings](#settings)
+  - [Host](#host)
+  - [Port](#port)
+  - [Database URL](#database-url)
+  - [Database connections](#database-connections)
+  - [Blockstore URL](#blockstore-url)
+  - [Administration token](#administration-token)
+  - [SSL](#ssl)
+  - [Logs](#logs)
+  - [Email](#email)
+  - [Webhooks](#webhooks)
+  - [SSE Keepalive](#sse-keepalive)
+  - [Sentry](#sentry)
+  - [Debug](#debug)
 
 ## Requirements
 
-- Python 3.9
+- Python 3.12
 - PostgreSQL >= 10
 
 On top of that, an object storage service is required in order to store the encrypted data blocks.
@@ -166,15 +167,6 @@ SSL key file. This setting enables serving Parsec over SSL.
 
 SSL certificate file. This setting enables serving Parsec over SSL.
 
-- ``--forward-proto-enforce-https``
-- Environ: ``PARSEC_FORWARD_PROTO_ENFORCE_HTTPS``
-
-Enforce HTTPS by redirecting incoming request that do not comply with the provided header.
-This is useful when running Parsec behind a forward proxy handing the SSL layer.
-You should *only* use this setting if you control your proxy or have some other
-guarantee that it sets/strips this header appropriately.
-Typical value for this setting should be `X-Forwarded-Proto:https`.
-
 ### Logs
 
 - ``--log-level <level>, -l <level>``
@@ -200,8 +192,8 @@ The log file to write to.
 
 ### Email
 
-- ``--backend-addr``
-- Environ: ``PARSEC_BACKEND_ADDR``
+- ``--server-addr``
+- Environ: ``PARSEC_SERVER_ADDR``
 
 URL to reach this server (typically used in invitation emails).
 
@@ -318,5 +310,5 @@ Equivalent to:
 ```txt
 --debug --db=MOCKED --blockstore=MOCKED --administration-token=s3cr3t
 --email-sender=no-reply@parsec.com --email-host=MOCKED
---backend-addr=parsec://localhost:<port>(?no_ssl=False if ssl is not set)
+--server-addr=parsec3://localhost:<port>(?no_ssl=False if ssl is not set)
 ```
