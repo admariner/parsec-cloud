@@ -1,0 +1,184 @@
+[
+    {
+        "major_versions": [
+            5
+        ],
+        "req": {
+            "cmd": "invite_info"
+        },
+        "reps": [
+            {
+                "status": "ok",
+                "unit": "InvitationType"
+            }
+        ],
+        "nested_types": [
+            {
+                "name": "InvitationType",
+                "discriminant_field": "type",
+                "variants": [
+                    {
+                        "name": "User",
+                        "discriminant_value": "USER",
+                        "fields": [
+                            {
+                                "name": "claimer_email",
+                                "type": "String"
+                            },
+                            {
+                                "name": "created_by",
+                                "type": "InvitationCreatedBy"
+                            },
+                            {
+                                "name": "administrators",
+                                "type": "List<UserGreetingAdministrator>"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Device",
+                        "discriminant_value": "DEVICE",
+                        "fields": [
+                            // Note: Greeter and claimer are the same for device invitations
+                            {
+                                "name": "claimer_user_id",
+                                "type": "UserID"
+                            },
+                            {
+                                "name": "claimer_human_handle",
+                                "type": "HumanHandle"
+                            },
+                            {
+                                "name": "created_by",
+                                "type": "InvitationCreatedBy"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "ShamirRecovery",
+                        "discriminant_value": "SHAMIR_RECOVERY",
+                        "fields": [
+                            {
+                                "name": "claimer_user_id",
+                                "type": "UserID"
+                            },
+                            {
+                                "name": "claimer_human_handle",
+                                "type": "HumanHandle"
+                            },
+                            {
+                                "name": "created_by",
+                                "type": "InvitationCreatedBy"
+                            },
+                            {
+                                "name": "shamir_recovery_created_on",
+                                "type": "DateTime"
+                            },
+                            {
+                                "name": "threshold",
+                                "type": "NonZeroU8"
+                            },
+                            {
+                                "name": "recipients",
+                                "type": "List<ShamirRecoveryRecipient>"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "UserOnlineStatus",
+                "variants": [
+                    {
+                        "name": "Online",
+                        "discriminant_value": "ONLINE"
+                    },
+                    {
+                        "name": "Offline",
+                        "discriminant_value": "OFFLINE"
+                    },
+                    {
+                        "name": "Unknown",
+                        "discriminant_value": "UNKNOWN"
+                    }
+                ]
+            },
+            {
+                "name": "InvitationCreatedBy",
+                "discriminant_field": "type",
+                "variants": [
+                    {
+                        "name": "User",
+                        "discriminant_value": "USER",
+                        "fields": [
+                            {
+                                "name": "user_id",
+                                "type": "UserID"
+                            },
+                            {
+                                "name": "human_handle",
+                                "type": "HumanHandle"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "ExternalService",
+                        "discriminant_value": "EXTERNAL_SERVICE",
+                        "fields": [
+                            {
+                                "name": "service_label",
+                                "type": "String"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "UserGreetingAdministrator",
+                "fields": [
+                    {
+                        "name": "user_id",
+                        "type": "UserID"
+                    },
+                    {
+                        "name": "human_handle",
+                        "type": "HumanHandle"
+                    },
+                    {
+                        "name": "online_status",
+                        "type": "UserOnlineStatus"
+                    },
+                    {
+                        "name": "last_greeting_attempt_joined_on",
+                        "type": "RequiredOption<DateTime>"
+                    }
+                ]
+            },
+            {
+                "name": "ShamirRecoveryRecipient",
+                "fields": [
+                    {
+                        "name": "user_id",
+                        "type": "UserID"
+                    },
+                    {
+                        "name": "human_handle",
+                        "type": "HumanHandle"
+                    },
+                    {
+                        "name": "shares",
+                        "type": "NonZeroU8"
+                    },
+                    {
+                        "name": "revoked_on",
+                        "type": "RequiredOption<DateTime>"
+                    },
+                    {
+                        "name": "online_status",
+                        "type": "UserOnlineStatus"
+                    }
+                ]
+            }
+        ]
+    }
+]

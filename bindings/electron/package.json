@@ -1,0 +1,17 @@
+{
+    "name": "libparsec_bindings_electron",
+    "version": "3.3.0-rc.12+dev",
+    "description": "",
+    "main": "dist/libparsec.node",
+    "scripts": {
+        "build:ci": "node scripts/build.js ci",
+        "build:dev": "node scripts/build.js dev",
+        "build:release": "node scripts/build.js release",
+        "test": "cargo test"
+    },
+    "author": "",
+    "license": "BUSL-1.1",
+    "dependencies": {
+        "cargo-cp-artifact": "^0.1.9"
+    }
+}

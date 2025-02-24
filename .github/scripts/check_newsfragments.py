@@ -1,87 +1,75 @@
-# Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
+# Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS
 
 """
-PRs must contain a newsfragment that reference an opened issue
+This scripts checks that all <issue>.<type>.rst files in the newsfragments
+directory are valid:
+
+- <type> corresponds to a valid type
+- <issue> corresponds to an existing issue or pull request
 """
 
 import argparse
 import json
-import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from subprocess import run
 from typing import Optional
 from urllib.request import HTTPError, Request, urlopen
 
-# If file never existed in master, consider as a new newsfragment
-# Cannot just git diff against master branch here given newsfragments
-# removed in master will be considered as new items in our branch
-# --exit-code makes the command exit with 0 if there are changes
-BASE_CMD = "git log origin/master --exit-code --".split()
-
-# Ignore master given we compare against it !
-# Also ignore release branch (e.g. `2.11`) that don't have to create newsfragments
-IGNORED_BRANCHES_PATTERN = r"(master|[0-9]+\.[0-9]+)"
+# This list should be keep up to date with `misc/releaser.py::FRAGMENT_TYPES.keys()`
+VALID_TYPES = ["feature", "bugfix", "doc", "removal", "api", "misc", "empty"]
 
 
 def check_newsfragment(fragment: Path) -> Optional[bool]:
     fragment_name = fragment.name
-    cmd_args = [*BASE_CMD, str(fragment)]
-    ret = run(cmd_args, capture_output=True)
-    if ret.returncode == 0:
-        print(f"[{fragment_name}] Found new newsfragment")
 
-        id, *_ = fragment_name.split(".")
-        # For more information on github api for issues:
-        # see https://docs.github.com/en/rest/issues/issues#get-an-issue
-        url = f"https://api.github.com/repos/Scille/parsec-cloud/issues/{id}"
-        req = Request(
-            method="GET",
-            url=url,
-            headers={"Accept": "application/vnd.github.v3+json"},
+    # Check news fragment TYPE
+    issue, type, *_ = fragment_name.split(".")
+    if type not in VALID_TYPES:
+        print(f"[{fragment_name}] Type `{type}` is not valid (expected one of {VALID_TYPES})")
+        return False
+
+    # Check news fragment ISSUE number
+    #
+    # NOTE: GitHub's REST API considers every pull request an issue, but not
+    # every issue is a pull request. For this reason, "Issues" endpoints may
+    # return both issues and pull requests in the response.
+    # See https://docs.github.com/en/rest/issues/issues#get-an-issue
+    url = f"https://api.github.com/repos/Scille/parsec-cloud/issues/{issue}"
+    req = Request(
+        method="GET",
+        url=url,
+        headers={"Accept": "application/vnd.github.v3+json"},
+    )
+    try:
+        response = urlopen(req)
+    except HTTPError as exc:
+        print(
+            f"[{fragment_name}] Issue `#{issue}` was not found (on <{url}> HTTP error {exc.code} {exc.reason})"
         )
-        try:
-            response = urlopen(req)
-        except HTTPError as exc:
-            print(
-                f"[{fragment_name}] fragment ID doesn't correspond to an issue ! (On <{url}> HTTP error {exc.code} {exc.reason})"
-            )
-        else:
-            data = json.loads(response.read())
-            print(f"[{fragment_name}] issue#{id} => {data}")
-            if "pull_request" in data:
-                print(
-                    f"[{fragment_name}] fragment ID correspond to a pull request instead of an issue !"
-                )
-            else:
-                if data["state"] == "open":
-                    return True
-                else:
-                    print(f"[{fragment_name}] fragment ID correspond to a closed issue !")
         return False
     else:
-        return None
+        # Sanity check: try to deserialize the response
+        data = json.loads(response.read())
+        print(f"[{fragment_name}] Issue #{issue} => {data['title']}")
+        return True
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("branch_name", help="current branch name", type=str)
     args = parser.parse_args()
 
-    if re.match(IGNORED_BRANCHES_PATTERN, args.branch_name):
-        print("Release branch detected, ignoring newsfragment checks")
-        raise SystemExit(0)
+    print(f"Checking news fragments...")
 
     with ThreadPoolExecutor() as pool:
         ret = list(
             filter(
                 lambda value: value is not None,
-                pool.map(check_newsfragment, Path("newsfragments").glob("*.rst")),
+                pool.map(
+                    check_newsfragment,
+                    Path("newsfragments").glob("*.*.rst"),  # <issue>.<type>.rst
+                ),
             )
         )
 
-    if len(ret) == 0:
-        raise SystemExit("No new newsfragment found")
-
     if True not in ret:
-        raise SystemExit("No valid newsfragments found")
+        raise SystemExit("No valid news fragments found")

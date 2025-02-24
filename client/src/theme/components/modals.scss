@@ -1,0 +1,362 @@
+/* Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS */
+
+/* -- modal-stepper -- */
+.modal-stepper {
+  // global
+  .modal {
+    padding: 2.5rem;
+
+    .closeBtn-container {
+      top: 1rem;
+      right: 1rem;
+    }
+
+    &.wizardTrue {
+      padding-top: 2.5rem;
+    }
+
+    &-header {
+      padding-bottom: 0.5rem;
+
+      &:has(.modal-header__text) {
+        padding-bottom: 1.5rem;
+      }
+
+      &__title {
+        padding: 0;
+        margin-bottom: 1rem;
+        color: var(--parsec-color-light-primary-800);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        max-width: var(--parsec-modal-width-sm);
+      }
+
+      &__text {
+        color: var(--parsec-color-light-secondary-grey);
+      }
+    }
+
+    &-content {
+      --background: transparent;
+
+      .step {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+    }
+
+    &-footer {
+      &:first-child:not([hidden]),
+      ion-button:not([style='display: none']) {
+        margin-top: 2.5rem;
+      }
+
+      &-buttons {
+        display: flex;
+        justify-content: end;
+        gap: 1rem;
+      }
+    }
+  }
+
+  .label-waiting {
+    color: var(--parsec-color-light-secondary-grey);
+    font-style: italic;
+    padding-left: 2em;
+    padding-right: 2em;
+  }
+
+  .spinner-container {
+    padding-top: 2.9rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    gap: 1rem;
+
+    ion-text {
+      color: var(--parsec-color-light-secondary-grey);
+    }
+  }
+}
+
+/* -- settings modal -- */
+@media only screen and (min-width: 768px) and (min-height: 600px) {
+  .settings-modal,
+  .settings-modal .ion-overlay-wrapper {
+    --width: 800px;
+    --height: 600px;
+    --border-radius: 8px;
+  }
+}
+
+.join-organization-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-lg);
+    position: relative;
+    display: block;
+    contain: content;
+  }
+
+  &:has(.Authentication)::part(content) {
+    max-height: var(--parsec-modal-max-height);
+  }
+
+  .Authentication {
+    max-height: var(--parsec-modal-max-height);
+    overflow: hidden;
+    display: flex;
+
+    .wizardTrue {
+      overflow-y: auto;
+      position: relative;
+
+      &::after {
+        content: '';
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3rem;
+        background: linear-gradient(0deg, var(--parsec-color-light-secondary-white) 0%, transparent 100%);
+      }
+    }
+  }
+}
+
+.create-organization-modal {
+  &::part(content) {
+    min-width: var(--parsec-modal-width-md);
+    max-width: var(--parsec-modal-width-md);
+  }
+
+  &:has(.OrgNameStep)::part(content),
+  &:has(.UserInfoStep)::part(content),
+  &:has(.organization-name-page.active)::part(content),
+  &:has(.user-information-page.active)::part(content),
+  &:has(.organization-creation-page.active)::part(content),
+  &:has(.creation-page.active)::part(content),
+  &:has(.created-page.active)::part(content),
+  &:has(.organization-name-and-server-page.active)::part(content) {
+    min-width: var(--parsec-modal-width-sm);
+    max-width: var(--parsec-modal-width-sm);
+  }
+
+  &:has(.saas-forgot-password)::part(content) {
+    min-width: 35.75rem;
+    max-width: 35.75rem;
+  }
+
+  .page-modal-container {
+    padding: 2.5rem;
+    display: flex;
+    height: auto;
+    width: 100%;
+  }
+
+  .authentication-page {
+    --height: 100%;
+    height: 100%;
+
+    @media only screen and (max-height: 768px) {
+      --height: 500px;
+      height: 500px;
+    }
+
+    @media only screen and (max-height: 500px) {
+      --height: 100vh;
+      height: 100vh;
+    }
+  }
+
+  .authentication-page-footer,
+  .summary-page-footer,
+  .organization-name-and-server-page-footer,
+  .organization-name-page-footer,
+  .user-information-page-footer,
+  .created-page-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2.5rem;
+
+    .modal-footer-buttons {
+      display: flex;
+      gap: 1rem;
+    }
+  }
+
+  .form-error ion-icon {
+    align-self: baseline;
+    padding-top: 0.25rem;
+  }
+}
+
+.settings-modal::part(content) {
+  min-width: var(--parsec-modal-width-lg);
+  --height: 600px;
+}
+
+.greet-organization-modal {
+  &::part(content) {
+    min-width: var(--parsec-modal-width-md);
+    max-width: var(--parsec-modal-width-md);
+    --height: fit-content;
+  }
+
+  &:has(.Summary)::part(content) {
+    min-width: var(--parsec-modal-width-sm);
+  }
+
+  // manage the two columns on Contact details step
+  .user-info-page {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    flex-direction: row !important;
+
+    .input-container {
+      &:nth-child(1),
+      &:nth-child(2) {
+        width: 100%;
+        flex-shrink: 0;
+      }
+      &:nth-child(3),
+      &:nth-child(4) {
+        width: calc(50% - 0.75rem);
+      }
+      // input will be changed with a custom dropdown: https://github.com/Scille/parsec-cloud/issues/4603
+      &:nth-child(4) {
+        margin: auto;
+      }
+    }
+
+    .dropdown-container {
+      width: calc(50% - 0.75rem);
+    }
+  }
+}
+
+.workspace-sharing-modal {
+  --max-height: 700px;
+
+  &::part(content) {
+    min-width: var(--parsec-modal-width-lg);
+    max-width: var(--parsec-modal-width-lg);
+    height: 100%;
+  }
+
+  .ion-page {
+    position: absolute;
+    display: flex;
+  }
+}
+
+.user-details-modal {
+  --width: 642px;
+  --max-height: var(--parsec-modal-max-height);
+
+  &::part(content) {
+    height: 100%;
+  }
+
+  .ms-modal-content {
+    overflow: auto;
+  }
+}
+
+.file-upload-modal::part(content) {
+  max-width: var(--parsec-modal-width-lg);
+}
+
+.changes-modal::part(content) {
+  max-width: var(--parsec-modal-width-sm);
+}
+
+.folder-selection-modal {
+  &::part(content) {
+    height: 615px;
+    max-width: var(--parsec-modal-width-sm);
+  }
+
+  .modal,
+  .modal > div,
+  .ms-modal {
+    height: 100%;
+  }
+
+  .ms-modal-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .ms-modal-footer {
+    margin-top: auto;
+  }
+}
+
+.change-authentication-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-md);
+  }
+
+  &:has(.NewPassword)::part(content) {
+    min-width: var(--parsec-modal-width-md);
+  }
+}
+
+.question-modal,
+.information-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-sm);
+    width: var(--parsec-modal-width-sm);
+  }
+
+  .ms-modal-header {
+    padding-bottom: 0rem !important;
+  }
+}
+
+.role-assignment-modal::part(content) {
+  max-width: var(--parsec-modal-width-sm);
+}
+
+.authentication-modal,
+.modal-tos {
+  .ms-modal-header__title {
+    max-width: none;
+  }
+
+  &::part(content) {
+    max-width: var(--parsec-modal-width-md);
+  }
+}
+
+.update-app-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-sm);
+  }
+
+  .ms-modal {
+    padding-top: 1.5rem;
+  }
+}
+
+.workspace-history-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-lg);
+  }
+}
+
+.new-order-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-sm);
+  }
+}
+
+.update-profile-modal {
+  &::part(content) {
+    max-width: var(--parsec-modal-width-md);
+  }
+}

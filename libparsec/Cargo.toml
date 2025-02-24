@@ -1,0 +1,48 @@
+[package]
+name = "libparsec"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Remember kid: RustCrypto is used if `use-sodiumoxide` is not set !
+use-sodiumoxide = ["libparsec_crypto/use-sodiumoxide"]
+vendored-openssl = ["libparsec_crypto/vendored-openssl"]
+vendored-dbus = ["libparsec_platform_device_loader/vendored-dbus"]
+test-utils = [
+    "dep:libparsec_testbed",
+    "libparsec_platform_device_loader/test-with-testbed",
+    "libparsec_platform_storage/test-with-testbed",
+    "libparsec_platform_ipc/test-with-testbed",
+    "libparsec_types/test-mock-time",
+]
+cli-tests = ["dep:libparsec_tests_fixtures"]
+
+[dependencies]
+libparsec_client = { workspace = true }
+libparsec_client_connection = { workspace = true }
+libparsec_protocol = { workspace = true }
+libparsec_crypto = { workspace = true }
+libparsec_types = { workspace = true }
+libparsec_platform_async = { workspace = true }
+libparsec_platform_device_loader = { workspace = true }
+libparsec_platform_storage = { workspace = true }
+libparsec_serialization_format = { workspace = true }
+
+libparsec_testbed = { workspace = true, optional = true }
+libparsec_tests_fixtures = { workspace = true, optional = true }
+
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libparsec_platform_mountpoint = { workspace = true }
+libparsec_platform_ipc = { workspace = true }
+
+env_logger = { workspace = true, features = ["auto-color", "humantime", "regex"] }

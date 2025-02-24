@@ -1,5 +1,0 @@
-export async function LoadWebLibParsecPlugin(): Promise<any> {
-  const module = await import('../../../../bindings/web/pkg');
-  module.init_logger();
-  return module;
-}

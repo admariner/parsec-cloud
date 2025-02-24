@@ -1,0 +1,40 @@
+[package]
+name = "libparsec_serialization_format"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
+
+[features]
+python-bindings-support = []
+
+[dependencies]
+itertools = { workspace = true, features = ["use_std"] }
+miniserde = { workspace = true, features = ["std"] }
+proc-macro2 = { workspace = true, features = ["proc-macro"] }
+quote = { workspace = true, features = ["proc-macro"] }
+syn = { workspace = true, features = [
+    "derive",
+    "parsing",
+    "printing",
+    "clone-impls",
+    "proc-macro",
+] }
+
+[dev-dependencies]
+rstest = { workspace = true, features = ["async-timeout"] }
+pretty_assertions = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true, features = ["std", "macros"] }
+rmp-serde = { workspace = true }
+hex-literal = { workspace = true }
+bytes = { workspace = true, features = ["serde"] }

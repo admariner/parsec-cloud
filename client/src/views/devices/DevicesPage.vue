@@ -1,0 +1,146 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
+<template>
+  <div class="devices-container">
+    <ion-button
+      id="add-device-button"
+      fill="clear"
+      @click="onAddDeviceClick()"
+    >
+      {{ $msTranslate('DevicesPage.addDevice') }}
+    </ion-button>
+
+    <!-- device list -->
+    <div class="devices-content">
+      <ion-text
+        class="no-device"
+        v-if="devices.length === 0"
+      >
+        {{ $msTranslate('DevicesPage.noDevices') }}
+      </ion-text>
+      <ion-list
+        class="devices-list"
+        id="devices-list"
+        v-if="devices.length > 0"
+      >
+        <ion-item
+          v-for="device in devices"
+          :key="device.id"
+          class="device-list-item ion-no-padding"
+          v-show="!device.isRecovery"
+        >
+          <device-card
+            :device="device"
+            :is-current="device.isCurrent"
+            :show-id="true"
+          />
+        </ion-item>
+      </ion-list>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { MsModalResult } from 'megashark-lib';
+import DeviceCard from '@/components/devices/DeviceCard.vue';
+import { OwnDeviceInfo, createDeviceInvitation, listOwnDevices } from '@/parsec';
+import { Routes, watchRoute, getCurrentRouteName } from '@/router';
+import { Information, InformationLevel, InformationManager, InformationManagerKey, PresentationMode } from '@/services/informationManager';
+import GreetDeviceModal from '@/views/devices/GreetDeviceModal.vue';
+import { IonButton, IonItem, IonList, IonText, modalController } from '@ionic/vue';
+import { Ref, inject, onMounted, ref, onUnmounted } from 'vue';
+
+const informationManager: InformationManager = inject(InformationManagerKey)!;
+const devices: Ref<OwnDeviceInfo[]> = ref([]);
+
+const routeWatchCancel = watchRoute(async () => {
+  if (getCurrentRouteName() !== Routes.MyProfile) {
+    return;
+  }
+  await refreshDevicesList();
+});
+
+onMounted(async () => {
+  await refreshDevicesList();
+});
+
+onUnmounted(async () => {
+  routeWatchCancel();
+});
+
+async function refreshDevicesList(): Promise<void> {
+  const result = await listOwnDevices();
+  if (result.ok) {
+    devices.value = result.value;
+  } else {
+    informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.errors.retrieveDeviceInfoFailed',
+        level: InformationLevel.Error,
+      }),
+      PresentationMode.Toast,
+    );
+    window.electronAPI.log('error', `Failed to list devices ${JSON.stringify(result.error)}`);
+  }
+}
+
+async function onAddDeviceClick(): Promise<void> {
+  const result = await createDeviceInvitation(false);
+  if (!result.ok) {
+    informationManager.present(
+      new Information({
+        message: 'DevicesPage.greet.errors.startFailed',
+        level: InformationLevel.Error,
+      }),
+      PresentationMode.Toast,
+    );
+    return;
+  }
+
+  const modal = await modalController.create({
+    component: GreetDeviceModal,
+    canDismiss: true,
+    cssClass: 'greet-organization-modal',
+    componentProps: {
+      informationManager: informationManager,
+      invitationLink: result.value.addr,
+      token: result.value.token,
+    },
+  });
+  await modal.present();
+  const modalResult = await modal.onWillDismiss();
+  await modal.dismiss();
+  if (modalResult.role === MsModalResult.Confirm) {
+    await refreshDevicesList();
+  }
+}
+</script>
+
+<style scoped lang="scss">
+.devices-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+}
+
+#add-device-button {
+  margin-left: auto;
+  --background: var(--parsec-color-light-secondary-text);
+  --background-hover: var(--parsec-color-light-secondary-contrast);
+  color: var(--parsec-color-light-secondary-white);
+}
+
+.devices-content {
+  margin-top: 1rem;
+  max-height: 16em;
+  overflow-y: auto;
+
+  .devices-list {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+</style>

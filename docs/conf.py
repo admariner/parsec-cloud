@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-# Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
-
+# Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS
 
 # -*- coding: utf-8 -*-
 #
@@ -17,17 +16,6 @@
 # serve to show the default.
 
 
-import os
-
-
-# Load Parsec version
-def fetch_parsec_version():
-    # Awesome hack to load `__version__`
-    _version_locals = {}
-    exec(open("../parsec/_version.py", encoding="utf-8").read(), _version_locals)
-    return _version_locals["__version__"]
-
-
 # -- General configuration ---------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -35,10 +23,22 @@ def fetch_parsec_version():
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.viewcode", "sphinx_rtd_theme"]
+extensions = [
+    "sphinx_copybutton",
+    "sphinx_rtd_theme",
+    "sphinx_tabs.tabs",
+    # Allow to use svg images in latex build.
+    # https://www.sphinx-doc.org/en/master/usage/extensions/imgconverter.html
+    "sphinx.ext.imgconverter",
+]
 
 # Sphinx-intl config
 locale_dirs = ["locale/"]
+# Configure how pot & po file are generated:
+#
+# - True: squash multiple `.rst` files into a single `.pot` file.
+# - False: 1 `.rst` file = 1 `.pot` file.
+gettext_compact = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -61,7 +61,7 @@ copyright = "2016-present, Scille SAS"
 # the built documents.
 #
 # The short X.Y version.
-version = fetch_parsec_version()
+version = "3.3.0-rc.12+dev"
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -77,7 +77,7 @@ release = version
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ["_build"]
+exclude_patterns = ["_build", ".venv"]
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
@@ -104,21 +104,17 @@ pygments_style = "sphinx"
 # documents.
 # keep_warnings = False
 
+# -- sphinx-tabs
+#
+# By default, tabs can be closed by selecting the open tab.
+sphinx_tabs_disable_tab_closing = True
+
 
 # -- Options for HTML output -------------------------------------------
-
-# on_rtd is whether we are on readthedocs.org, this line of code grabbed from docs.readthedocs.org
-on_rtd = os.environ.get("READTHEDOCS", None) == "True"
-
-import sphinx_rtd_theme
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 html_theme = "sphinx_rtd_theme"
-# Add any paths that contain custom themes here, relative to this directory.
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
-if on_rtd:
-    using_rtd_theme = True
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
@@ -129,7 +125,8 @@ html_theme_options = {
     # 'sticky_navigation': True  # Set to False to disable the sticky nav while scrolling.
     "logo_only": True,  # if we have a html_logo below, this shows /only/ the logo with no title text
     "collapse_navigation": False,  # Collapse navigation (False makes it tree-like)
-    # 'display_version': True,  # Display the docs version
+    "version_selector": True,  # Display a version selector below the title (only if hosted on RTD and if more than 1 active version)
+    "language_selector": True,  # Display a language selector below the title (only if hosted on RTD and if more than 1 active version)
     # 'navigation_depth': 4,  # Depth of the headers shown in the navigation bar
 }
 
@@ -141,13 +138,13 @@ html_theme_options = {
 # html_title.
 # html_short_title = None
 
-# VCS options: https://docs.readthedocs.io/en/latest/vcs.html#github
+# Edit source options for github: https://docs.readthedocs.io/en/latest/guides/edit-source-links-sphinx.html#github
 html_context = {
     "display_github": True,  # Integrate GitHub
-    "github_user": "Parsec",  # Username
+    "github_user": "Scille",  # Username
     "github_repo": "parsec-cloud",  # Repo name
     "github_version": "master",  # Version
-    "conf_py_path": "/",  # Path in the checkout to the docs root
+    "conf_py_path": "/docs/",  # Path in the checkout to the docs root
 }
 
 # The name of an image file (relative to this directory) to place at the
@@ -216,39 +213,80 @@ htmlhelp_basename = "parsecdoc"
 
 # -- Options for LaTeX output ------------------------------------------
 
+latex_engine = "lualatex"
+
 latex_elements = {
-    # The paper size ('letterpaper' or 'a4paper').
-    # 'papersize': 'letterpaper',
-    #  The font size ('10pt', '11pt' or '12pt').
-    # 'pointsize': '10pt',
     #  Additional stuff for the LaTeX preamble.
-    # 'preamble': '',
+    "preamble": "\n".join(
+        [
+            # Use firacode in codeblocks.
+            r"\usepackage{lstfiracode}",
+        ]
+    ),
+    # Customize used font in latex
+    "fontpkg": "\n".join(
+        [
+            r"\usepackage{fontspec}",
+            r"\setmainfont{roboto}",
+            r"\setsansfont{roboto}",
+            r"\setmonofont{firacode}",
+        ]
+    ),
+    # The paper size ('letterpaper' or 'a4paper').
+    "papersize": "a4paper",
+    #  The font size ('10pt', '11pt' or '12pt').
+    "pointsize": "12pt",
+    "printindex": r"\footnotesize\raggedright\printindex",
+    "fncychap": r"\usepackage[Sonny]{fncychap}",
+    "babel": r"\usepackage{babel}",
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass
 # [howto/manual]).
-latex_documents = [("index", "parsec.tex", "Parsec Documentation", "Emmanuel Leblond", "manual")]
+latex_documents = [
+    (
+        "index",
+        "parsec.tex",
+        "Parsec Documentation",
+        "dev-parsec+fullguide@scille.fr",
+        "howto",
+    ),
+    (
+        "userguide/index",
+        "parsec-userguide.tex",
+        "Parsec User Guide",
+        "dev-parsec+userguide@scille.fr",
+        "howto",
+    ),
+    (
+        "hosting/index",
+        "parsec-hosting-guide.tex",
+        "Parsec Hosting Guide",
+        "dev-parsec+hostingguide@scille.fr",
+        "howto",
+    ),
+]
 
 # The name of an image file (relative to this directory) to place at
 # the top of the title page.
-# latex_logo = None
+latex_logo = "parsec.png"
 
 # For "manual" documents, if this is true, then toplevel headings
 # are parts, not chapters.
-# latex_use_parts = False
+latex_use_parts = True
 
 # If true, show page references after internal links.
-# latex_show_pagerefs = False
+latex_show_pagerefs = False
 
 # If true, show URL addresses after external links.
-# latex_show_urls = False
+latex_show_urls = "no"
 
 # Documents to append as an appendix to all manuals.
 # latex_appendices = []
 
 # If false, no module index is generated.
-# latex_domain_indices = True
+latex_domain_indices = True
 
 
 # -- Options for manual page output ------------------------------------
@@ -273,7 +311,7 @@ texinfo_documents = [
         "Parsec Documentation",
         "Scille SAS",
         "parsec",
-        "Secure cloud framework.",
+        "Secure cloud framework",
         "Miscellaneous",
     )
 ]

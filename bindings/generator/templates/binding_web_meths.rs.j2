@@ -1,0 +1,942 @@
+// Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS
+{# Macros -#}
+
+{#-
+ # Types conversions macros
+ #}
+
+
+{%- macro function_param_type(type) -%}
+{%- if type.kind == "ref" -%}
+{{ function_param_type(type.elem) }}
+{%- elif type.kind == "dict" -%}
+Object
+{%- elif type.kind == "list" -%}
+Vec<{{ function_param_type(type.elem) }}>
+{%- elif type.kind == "set" -%}
+HashSet<{{ function_param_type(type.elem) }}>
+{%- elif type.kind == "tuple" -%}
+(
+    {%- for value in type.values -%}
+        {{- function_param_type(value) }}{{ ", " if not loop.last else "" }}
+    {%- endfor -%}
+)
+{%- elif type.kind == "optional" -%}
+Option<{{ function_param_type(type.elem) }}>
+{%- elif type.kind == "none" -%}
+null
+{%- elif type.kind == "bool" -%}
+bool
+{%- elif type.kind == "u8_based" -%}
+u8
+{%- elif type.kind == "i32_based" -%}
+i32
+{%- elif type.kind == "u32_based" -%}
+u32
+{%- elif type.kind == "i64_based" -%}
+i64
+{%- elif type.kind == "u64_based" -%}
+u64
+{%- elif type.kind in ("f64_based", "float") -%}
+f64
+{%- elif type.kind in ("str", "str_based") -%}
+String
+{%- elif type.kind in ("bytes", "bytes_based") -%}
+Uint8Array
+{%- elif type.kind == "struct" -%}
+Object
+{%- elif type.kind == "variant" -%}
+Object
+{%- elif type.kind == "result" -%}
+Object
+{%- elif type.kind == "OnClientEventCallback" -%}
+Function
+{%- elif type.kind == "enum" -%}
+String
+{%- else -%}
+{{ raise("Unsupported type %r" % type) }}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro render_function_param_cooking(param_name, type) -%}
+{% if type.kind == "ref" %}
+{{ render_function_param_cooking(param_name, type.elem) }}
+{% elif type.kind == "optional" %}
+let {{ param_name }} = match {{ param_name }} {
+    Some({{ param_name }}) => {
+        {{ render_function_param_cooking(param_name, type.elem) }}
+        Some({{ param_name }})
+    }
+    None => None,
+};
+{% elif type.kind == "str_based" %}
+let {{ param_name }} =
+{% if type.custom_from_rs_string -%}
+{
+    let custom_from_rs_string = {{ type.custom_from_rs_string }};
+    custom_from_rs_string({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{%- else -%}
+{{ param_name }}.parse().map_err(|_| {
+    JsValue::from(TypeError::new("Not a valid {{ type.name }}"))
+})?;
+{% endif %}
+{% elif type.kind == "bytes" %}
+let {{ param_name }} = {{ param_name }}.to_vec();
+{% elif type.kind == "bytes_based" %}
+let {{ param_name }} =
+{% if type.custom_from_rs_bytes -%}
+{
+    let custom_from_rs_bytes = {{ type.custom_from_rs_bytes }};
+    custom_from_rs_bytes(&{{ param_name }}.to_vec())
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{%- else -%}
+{{ param_name }}.to_vec().as_slice().try_into().map_err(|_| {
+    JsValue::from(TypeError::new("Not a valid {{ type.name }}"))
+})?;
+{% endif %}
+{% elif type.kind == "u8_based" and type.custom_from_rs_u8 %}
+let {{ param_name }} = {
+    let custom_from_rs_u8 = {{ type.custom_from_rs_u8 }};
+    custom_from_rs_u8({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{% elif type.kind == "u32_based" and type.custom_from_rs_u32 %}
+let {{ param_name }} = {
+    let custom_from_rs_u32 = {{ type.custom_from_rs_u32 }};
+    custom_from_rs_u32({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{% elif type.kind == "i32_based" and type.custom_from_rs_i32 %}
+let {{ param_name }} = {
+    let custom_from_rs_i32 = {{ type.custom_from_rs_i32 }};
+    custom_from_rs_i32({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{% elif type.kind == "u64_based" and type.custom_from_rs_u64 %}
+let {{ param_name }} = {
+    let custom_from_rs_u64 = {{ type.custom_from_rs_u64 }};
+    custom_from_rs_u64({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{% elif type.kind == "i64_based" and type.custom_from_rs_i64 %}
+let {{ param_name }} = {
+    let custom_from_rs_i64 = {{ type.custom_from_rs_i64 }};
+    custom_from_rs_i64({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{% elif type.kind == "f64_based" and type.custom_from_rs_f64 %}
+let {{ param_name }} = {
+    let custom_from_rs_f64 = {{ type.custom_from_rs_f64 }};
+    custom_from_rs_f64({{ param_name }})
+        .map_err(|e| TypeError::new(e.as_ref()))
+}?;
+{% elif type.kind in ("struct", "variant", "result") %}
+let {{ param_name }} = {{ param_name }}.into();
+let {{ param_name }} = {{ render_js_value_to_rs(param_name, type) }};
+{% elif type.kind == "dict" %}
+let {{ param_name }} = {
+    let js_map = {{ param_name }};
+    let mut d = std::collections::HashMap::with_capacity(
+        Reflect::get(&js_map, &"size".into())?.dyn_into::<Number>()?.value_of() as usize
+    );
+
+    let js_keys = Reflect::get(&js_map, &"keys".into())?.dyn_into::<Function>()?.call0(&js_map)?;
+    let js_values = Reflect::get(&js_map, &"values".into())?.dyn_into::<Function>()?.call0(&js_map)?;
+
+    let js_literal_next = "next".into();
+    let js_keys_next_cb = Reflect::get(&js_keys, &js_literal_next)?.dyn_into::<Function>()?;
+    let js_values_next_cb = Reflect::get(&js_values, &js_literal_next)?.dyn_into::<Function>()?;
+
+    let js_literal_done = "done".into();
+    let js_literal_value = "value".into();
+    loop {
+        let next_js_key = js_keys_next_cb.call0(&js_keys)?;
+        let next_js_value = js_values_next_cb.call0(&js_values)?;
+
+        let keys_done = Reflect::get(&next_js_key, &js_literal_done)?.dyn_into::<Boolean>()?.value_of();
+        let values_done = Reflect::get(&next_js_value, &js_literal_done)?.dyn_into::<Boolean>()?.value_of();
+        match (keys_done, values_done) {
+            (true, true) => break,
+            (false, false) => (),
+            _ => unreachable!(),
+        }
+
+        let js_key = Reflect::get(&next_js_key, &js_literal_value)?.dyn_into::<JsString>()?;
+        let js_value = Reflect::get(&next_js_value, &js_literal_value)?.dyn_into::<JsString>()?;
+
+        let rs_key = {{ render_js_value_to_rs("js_key", type.key) }};
+        let rs_value = {{ render_js_value_to_rs("js_value", type.value) }};
+
+        d.insert(rs_key, rs_value);
+    }
+    d
+};
+{% elif type.kind == "list" %}
+let mut {{ param_name }}_converted = Vec::with_capacity({{ param_name }}.len());
+for js_elem in {{ param_name }}.iter() {
+    let rs_elem = {{ render_js_value_to_rs("js_elem.into()", type.elem) }};
+    {{ param_name }}_converted.push(rs_elem);
+}
+let {{ param_name }} = {{ param_name }}_converted;
+{% elif type.kind == "set" %}
+let mut {{ param_name }}_converted = Vec::with_capacity({{ param_name }}.len());
+for js_elem in {{ param_name }}.iter() {
+    let rs_elem = {{ render_js_value_to_rs("js_elem.into()", type.elem) }};
+    {{ param_name }}_converted.push(rs_elem);
+}
+let {{ param_name }} = {{ param_name }}_converted.into_iter().collect();
+{% elif type.kind == "OnClientEventCallback" %}
+let {{ param_name }} = std::sync::Arc::new(move |handle: libparsec::Handle, event: libparsec::ClientEvent| {
+    // TODO: Better error handling here (log error ?)
+    let js_event = {{ variant_rs_to_js_function_name(type.event_type) }}(event).expect("event type conversion error");
+    on_event_callback.call2(&JsValue::NULL, &Number::from(handle), &js_event).expect("error in event callback");
+}) as std::sync::Arc<dyn Fn(libparsec::Handle, libparsec::ClientEvent)>;
+{% elif type.kind == "enum"%}
+let {{ param_name }} = {{ enum_js_to_rs_function_name(type) }}(&{{ param_name }})?;
+{% endif %}
+{%- endmacro -%}
+
+
+{%- macro maybe_ref(js_val, type) -%}
+{%- if type.kind == "ref" and type.elem.kind == "list" -%}
+{{ js_val }}.as_slice()
+{%- elif type.kind == "ref" and type.elem.kind == "set" -%}
+{{ js_val }}.as_ref()
+{%- elif type.kind == "optional" and type.elem.kind == "ref" -%}
+{{ js_val }}.as_ref()
+{%- elif type.kind == "ref" and type.elem.kind == "bytes" -%}
+&{{ js_val }}.to_vec()
+{%- elif type.kind == "ref" -%}
+&{{ js_val }}
+{%- else -%}
+{{ js_val }}
+{%- endif -%}
+{%- endmacro -%}
+
+
+{%- macro render_js_value_to_rs(js_val, type) -%}
+{%- if type.kind == "ref" -%}
+{{ render_js_value_to_rs(js_val, type.elem) }}
+{%- elif type.kind == "optional" -%}
+if {{ js_val }}.is_null() {
+    None
+} else {
+    Some({{ render_js_value_to_rs("js_val", type.elem) }})
+}
+{%- elif type.kind == "none" -%}
+{
+    let _ = {{ js_val }};
+    ()
+}
+{%- elif type.kind == "bool" -%}
+{{ js_val }}.dyn_into::<Boolean>().map_err(|_| TypeError::new("Not a boolean"))?.value_of()
+{%- elif type.kind == "u8_based" -%}
+{
+    let v = {{ js_val }}.dyn_into::<Number>().map_err(|_| TypeError::new("Not a number"))?.value_of();
+    if v < (u8::MIN as f64) || (u8::MAX as f64) < v {
+        return Err(JsValue::from(TypeError::new("Not an u8 number")));
+    }
+    let v = v as u8;
+    {% if type.custom_from_rs_u8 -%}
+    let custom_from_rs_u8 = {{ type.custom_from_rs_u8 }};
+    match custom_from_rs_u8(v) {
+        Ok(val) => val,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "i32_based" -%}
+{
+    let v = {{ js_val }}.dyn_into::<Number>().map_err(|_| TypeError::new("Not a number"))?.value_of();
+    if v < (i32::MIN as f64) || (i32::MAX as f64) < v {
+        return Err(JsValue::from(TypeError::new("Not an i32 number")));
+    }
+    let v = v as i32;
+    {% if type.custom_from_rs_i32 -%}
+    let custom_from_rs_i32 = {{ type.custom_from_rs_i32 }};
+    match custom_from_rs_i32(v) {
+        Ok(val) => val,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "u32_based" -%}
+{
+    let v = {{ js_val }}.dyn_into::<Number>().map_err(|_| TypeError::new("Not a number"))?.value_of();
+    if v < (u32::MIN as f64) || (u32::MAX as f64) < v {
+        return Err(JsValue::from(TypeError::new("Not an u32 number")));
+    }
+    let v = v as u32;
+    {% if type.custom_from_rs_u32 -%}
+    let custom_from_rs_u32 = {{ type.custom_from_rs_u32 }};
+    match custom_from_rs_u32(v) {
+        Ok(val) => val,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "i64_based" -%}
+{
+    let v = {{ js_val }}.dyn_into::<Number>().map_err(|_| TypeError::new("Not a number"))?.value_of();
+    if v < (i64::MIN as f64) || (i64::MAX as f64) < v {
+        return Err(JsValue::from(TypeError::new("Not an i64 number")));
+    }
+    let v = v as i64;
+    {% if type.custom_from_rs_i64 -%}
+    let custom_from_rs_i64 = {{ type.custom_from_rs_i64 }};
+    match custom_from_rs_i64(v) {
+        Ok(val) => val,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "u64_based" -%}
+{
+    let v = {{ js_val }}.dyn_into::<Number>().map_err(|_| TypeError::new("Not a number"))?.value_of();
+    if v < (u64::MIN as f64) || (u64::MAX as f64) < v {
+        return Err(JsValue::from(TypeError::new("Not an u64 number")));
+    }
+    let v = v as u64;
+    {% if type.custom_from_rs_u64 -%}
+    let custom_from_rs_u64 = {{ type.custom_from_rs_u64 }};
+    match custom_from_rs_u64(v) {
+        Ok(val) => val,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }
+    {%- else -%}
+    v
+    {%- endif %}
+}
+{%- elif type.kind == "f64_based" -%}
+{
+    let v = {{ js_val }}.dyn_into::<Number>()?.value_of();
+{% if type.custom_from_rs_f64 %}
+    let custom_from_rs_f64 = {{ type.custom_from_rs_f64 }};
+    let v = custom_from_rs_f64(v).map_err(|e| TypeError::new(e.as_ref()))?;
+{% endif %}
+    v
+}
+{%- elif type.kind == "float" -%}
+{{ js_val }}.dyn_into::<Number>()?.value_of()
+{%- elif type.kind == "str" -%}
+{{ js_val }}.dyn_into::<JsString>().ok().and_then(|s| s.as_string()).ok_or_else(|| TypeError::new("Not a string"))?
+{%- elif type.kind == "str_based" -%}
+{{ js_val }}.dyn_into::<JsString>().ok().and_then(|s| s.as_string()).ok_or_else(|| TypeError::new("Not a string"))
+{%- if type.custom_from_rs_string -%}
+.and_then(|x| {
+    let custom_from_rs_string = {{ type.custom_from_rs_string }};
+    custom_from_rs_string(x)
+.map_err(|e| TypeError::new(e.as_ref())) })
+{%- else -%}
+?.parse()
+{%- endif %}
+.map_err(|_| TypeError::new("Not a valid {{ type.name }}"))?
+{%- elif type.kind == "bytes" -%}
+{{ js_val }}.dyn_into::<Uint8Array>().map_err(|_| TypeError::new("Not a Uint8Array"))?.to_vec()
+{%- elif type.kind == "bytes_based" -%}
+{{ js_val }}.dyn_into::<Uint8Array>().map_err(|_| TypeError::new("Not a Uint8Array"))
+{%- if type.custom_from_rs_bytes -%}
+.and_then(|x| {
+    let custom_from_rs_bytes = {{ type.custom_from_rs_bytes }};
+    custom_from_rs_bytes(&x.to_vec())
+.map_err(|e| TypeError::new(e.as_ref())) })
+{%- else -%}
+?.to_vec()
+{%- endif %}
+.map_err(|_| TypeError::new("Not a valid {{ type.name }}"))?
+{%- elif type.kind == "dict" -%}
+{
+    let js_val = {{ js_val }}.dyn_into::<Map>()
+        .map_err(|_| TypeError::new("Not a Map"))?;
+    let mut converted = std::collections::HashMap::with_capacity(js_val.size() as usize);
+    let js_keys = js_val.keys();
+    let js_values = js_val.values();
+    loop {
+        let next_js_key = js_keys.next()?;
+        let next_js_value = js_values.next()?;
+        if next_js_key.done() {
+            assert!(next_js_value.done());
+            break;
+        }
+        assert!(!next_js_value.done());
+
+        let js_key = next_js_key.value();
+        let js_value = next_js_value.value();
+
+        let key = {{ render_js_value_to_rs("js_key", type.key) }};
+        let value = {{ render_js_value_to_rs("js_value", type.value) }};
+        converted.insert(key, value);
+    }
+    converted
+}
+{%- elif type.kind == "list" -%}
+{
+    let js_val = {{ js_val }}.dyn_into::<Array>()
+        .map_err(|_| TypeError::new("Not an array"))?;
+    let mut converted = Vec::with_capacity(js_val.length() as usize);
+    for x in {{ js_val }}.iter() {
+        let x_converted = {{ render_js_value_to_rs("x", type.elem) }};
+        converted.push(x_converted);
+    }
+    converted
+}
+{%- elif type.kind == "set" -%}
+{
+    let js_val = {{ js_val }}.dyn_into::<Array>()
+        .map_err(|_| TypeError::new("Not an array"))?;
+    let mut converted = Vec::with_capacity(js_val.length() as usize);
+    for x in {{ js_val }}.iter() {
+        let x_converted = {{ render_js_value_to_rs("x", type.elem) }};
+        converted.push(x_converted);
+    }
+    converted.into_iter().collect()
+}
+{%- elif type.kind == "tuple" -%}
+(
+{%- for value in type.values -%}
+    {
+        {% set value_var_name = "js_x" ~ loop.index %}
+        let {{ value_var_name }} = Reflect::get_u32(&{{ js_val }}, {{ loop.index }})?;
+        {{ render_js_value_to_rs(value_var_name, value) }}
+    }
+    {{ ", " if not loop.last else "" -}}
+{%- endfor -%}
+)
+{%- elif type.kind == "struct" -%}
+{{ struct_js_to_rs_function_name(type) }}({{ js_val }})?
+{%- elif type.kind == "variant" -%}
+{{ variant_js_to_rs_function_name(type) }}({{ js_val }})?
+{%- elif type.kind == "result" -%}
+    match Reflect::get(&{{ js_val }}, &"ok".into())?.as_bool() {
+        Some(true) => {
+            let js_value = Reflect::get(&{{ js_val }}, &"value".into())?;
+            Ok({{ render_js_value_to_rs("js_value", type.ok) }})
+        }
+        Some(false) => {
+            let js_error = Reflect::get(&{{ js_val }}, &"error".into())?;
+            Err({{ render_js_value_to_rs("js_error", type.err) }})
+        }
+        None => {
+            return Err(TypeError::new("Invalid `ok` field in Result object: Not a boolean"));
+        }
+    }
+{%- elif type.kind == "enum" -%}
+{
+    let raw_string = {{ js_val }}
+        .as_string()
+        .ok_or_else(|| {
+            let type_error = TypeError::new("value is not a string");
+            type_error.set_cause(&{{ js_val }});
+            JsValue::from(type_error)
+        })?;
+    {{ enum_js_to_rs_function_name(type) }}(raw_string.as_str())
+}?
+{%- else -%}
+{{ raise("Unsupported type %r" % type) }}
+{%- endif -%}
+{%- endmacro -%}
+
+
+{%- macro render_rs_to_js_value(rs_value, type) -%}
+{%- if type.kind == "optional" -%}
+match {{ rs_value }} {
+    Some(val) => {{ render_rs_to_js_value("val", type.elem) }},
+    None => JsValue::NULL,
+}
+{%- elif type.kind == "none" -%}
+{
+    let _ = {{ rs_value }};
+    JsValue::null()
+}
+{%- elif type.kind == "u8_based" -%}
+{%- if type.custom_to_rs_u8 %}
+{
+    let custom_to_rs_u8 = {{ type.custom_to_rs_u8 }};
+    let v = match custom_to_rs_u8({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    };
+    JsValue::from(v)
+}
+{% else -%}
+JsValue::from({{ rs_value }})
+{%- endif -%}
+{%- elif type.kind == "i32_based" -%}
+{%- if type.custom_to_rs_i32 %}
+{
+    let custom_to_rs_i32 = {{ type.custom_to_rs_i32 }};
+    let v = match custom_to_rs_i32({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    };
+    JsValue::from(v)
+}
+{% else -%}
+JsValue::from({{ rs_value }})
+{%- endif -%}
+{%- elif type.kind == "u32_based" -%}
+{%- if type.custom_to_rs_u32 %}
+{
+    let custom_to_rs_u32 = {{ type.custom_to_rs_u32 }};
+    let v = match custom_to_rs_u32({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    };
+    JsValue::from(v)
+}
+{% else -%}
+JsValue::from({{ rs_value }})
+{%- endif -%}
+{%- elif type.kind == "i64_based" -%}
+{%- if type.custom_to_rs_i64 %}
+{
+    let custom_to_rs_i64 = {{ type.custom_to_rs_i32 }};
+    let v = match custom_to_rs_i64({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    };
+    JsValue::from(v)
+}
+{% else -%}
+JsValue::from({{ rs_value }})
+{%- endif -%}
+{%- elif type.kind == "u64_based" -%}
+{%- if type.custom_to_rs_u64 %}
+{
+    let custom_to_rs_u64 = {{ type.custom_to_rs_i32 }};
+    let v = match custom_to_rs_u64({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    };
+    JsValue::from(v)
+}
+{% else -%}
+JsValue::from({{ rs_value }})
+{%- endif -%}
+{%- elif type.kind == "f64_based" -%}
+{%- if type.custom_to_rs_f64 %}
+{
+    let custom_to_rs_f64 = {{ type.custom_to_rs_f64 }};
+    let v = match custom_to_rs_f64({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    };
+    JsValue::from(v)
+}
+{% else -%}
+JsValue::from({{ rs_value }})
+{%- endif -%}
+{%- elif type.kind == "str_based" -%}
+JsValue::from_str({%- if type.custom_to_rs_string -%}
+{
+    let custom_to_rs_string = {{ type.custom_to_rs_string }};
+    match custom_to_rs_string({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }.as_ref()
+}
+{%- else -%}
+{{ rs_value }}.as_ref()
+{%- endif -%}
+)
+{%- elif type.kind == "bytes" -%}
+JsValue::from(Uint8Array::from({{ rs_value }}.as_ref()))
+{%- elif type.kind == "bytes_based" -%}
+JsValue::from(Uint8Array::from({%- if type.custom_to_rs_bytes -%}
+{
+    let custom_to_rs_bytes = {{ type.custom_to_rs_bytes }};
+    match custom_to_rs_bytes({{ rs_value }}) {
+        Ok(ok) => ok,
+        Err(err) => return Err(JsValue::from(TypeError::new(err.as_ref()))),
+    }.as_ref()
+}
+{%- else -%}
+{{ rs_value }}.as_ref()
+{%- endif -%}
+))
+{%- elif type.kind == "dict" -%}
+{
+    let js_map = Map::new();
+    for (key, value) in {{ rs_value }}.into_iter() {
+        let js_key = {{ render_rs_to_js_value("key", type.key) }};
+        let js_value = {{ render_rs_to_js_value("value", type.value) }};
+        js_map.set(&js_key, &js_value);
+    }
+    js_map.into()
+}
+{%- elif type.kind == "list" -%}
+{
+    // Array::new_with_length allocates with `undefined` value, that's why we `set` value
+    let js_array = Array::new_with_length({{ rs_value }}.len() as u32);
+    for (i, elem) in {{ rs_value }}.into_iter().enumerate() {
+        let js_elem = {{ render_rs_to_js_value("elem", type.elem) }};
+        js_array.set(i as u32, js_elem);
+    }
+    js_array.into()
+}
+{%- elif type.kind == "set" -%}
+{
+    // Array::new_with_length allocates with `undefined` value, that's why we `set` value
+    let js_array = Array::new_with_length({{ rs_value }}.len() as u32);
+    for (i, elem) in {{ rs_value }}.into_iter().enumerate() {
+        let js_elem = {{ render_rs_to_js_value("elem", type.elem) }};
+        js_array.set(i as u32, js_elem);
+    }
+    js_array.into()
+}
+{%- elif type.kind == "tuple" -%}
+{
+    let (
+    {%- for value in type.values -%}
+        {% set value_var_name = "x" ~ loop.index %}
+        {{- value_var_name }}{{ ", " if not loop.last else "" -}}
+    {%- endfor -%}
+    ) = {{ rs_value }};
+    let js_array = Array::new_with_length({{ type.values | length }});
+    {%- for value in type.values -%}
+        {% set value_var_name = "x" ~ loop.index %}
+        let js_value = {{ render_rs_to_js_value(value_var_name, value) }};
+        js_array.push(&js_value);
+    {%- endfor -%}
+    js_array.into()
+}
+{%- elif type.kind == "result" -%}
+match {{ rs_value }} {
+    Ok(value) => {
+        let js_obj = Object::new().into();
+        Reflect::set(&js_obj, &"ok".into(), &true.into())?;
+        let js_value = {{ render_rs_to_js_value("value", type.ok) }};
+        Reflect::set(&js_obj, &"value".into(), &js_value)?;
+        js_obj
+    }
+    Err(err) => {
+        let js_obj = Object::new().into();
+        Reflect::set(&js_obj, &"ok".into(), &false.into())?;
+        let js_err = {{ render_rs_to_js_value("err", type.err) }};
+        Reflect::set(&js_obj, &"error".into(), &js_err)?;
+        js_obj
+    }
+}
+{%- elif type.kind == "struct" -%}
+{{ struct_rs_to_js_function_name(type) }}({{ rs_value }})?
+{%- elif type.kind == "variant" -%}
+{{ variant_rs_to_js_function_name(type) }}({{ rs_value }})?
+{%- elif type.kind == "enum" -%}
+JsValue::from_str({{ enum_rs_to_js_function_name(type) }}({{ rs_value }}))
+{%- else -%}
+{{ rs_value }}.into()
+{%- endif -%}
+{%- endmacro -%}
+
+
+{#-
+ # Structure-related macros
+ #}
+
+
+{%- macro struct_js_to_rs_function_name(struct) %}struct_{{ struct.name | pascal2snake }}_js_to_rs{% endmacro -%}
+{%- macro struct_rs_to_js_function_name(struct) %}struct_{{ struct.name | pascal2snake }}_rs_to_js{% endmacro -%}
+
+
+{%- macro render_struct_js_to_rs(struct) %}
+#[allow(dead_code)]
+fn {{ struct_js_to_rs_function_name(struct) }}(obj: JsValue) -> Result<libparsec::{{ struct.name }}, JsValue> {
+{% for attr_name, attr_type in struct.attributes.items() %}
+    let {{ attr_name }} = {
+        let js_val = Reflect::get(&obj, &"{{ attr_name | snake2camel }}".into())?;
+        {{ render_js_value_to_rs("js_val", attr_type) }}
+    };
+{% endfor %}
+{% if struct.custom_init is none %}
+    Ok(libparsec::{{ struct.name }} {
+        {{ struct.list_attributes() }}
+    })
+{% else %}
+    {
+        let custom_init = {{ struct.custom_init }};
+        custom_init({{ struct.list_attributes() }}).map_err(|e| e.into())
+    }
+{% endif %}
+}
+{% endmacro -%}
+
+
+{%- macro render_struct_rs_to_js(struct) %}
+#[allow(dead_code)]
+fn {{ struct_rs_to_js_function_name(struct) }}(rs_obj: libparsec::{{ struct.name }}) -> Result<JsValue, JsValue> {
+    let js_obj = Object::new().into();
+{% for attr_name, attr_type in struct.attributes.items() %}
+{% set custom_getter = struct.custom_getters.get(attr_name) %}
+{% if custom_getter is none %}
+    let js_{{ attr_name }} = {{ render_rs_to_js_value("rs_obj.%s" % attr_name, attr_type) }};
+{% else %}
+    let js_{{ attr_name }} = {
+        let custom_getter = {{ custom_getter }};
+        {{ render_rs_to_js_value("custom_getter(&rs_obj)", attr_type) }}
+    };
+{% endif %}
+    Reflect::set(&js_obj, &"{{ attr_name | snake2camel }}".into(), &js_{{ attr_name }})?;
+{% endfor %}
+    Ok(js_obj)
+}
+{% endmacro -%}
+
+
+{#-
+ # Variant-related macros
+ #}
+
+
+{%- macro variant_js_to_rs_function_name(variant) %}variant_{{ variant.name | pascal2snake }}_js_to_rs{% endmacro -%}
+{%- macro variant_rs_to_js_function_name(variant) %}variant_{{ variant.name | pascal2snake }}_rs_to_js{% endmacro -%}
+
+{%- macro render_variant_js_to_rs(variant) %}
+#[allow(dead_code)]
+fn {{ variant_js_to_rs_function_name(variant) }}(obj: JsValue) -> Result<libparsec::{{ variant.name }}, JsValue> {
+    let tag = Reflect::get(&obj, &"tag".into())?;
+    let tag = tag.as_string().ok_or_else(|| JsValue::from(TypeError::new("tag isn't a string")))?;
+    match tag.as_str() {
+{% for value in variant.values %}
+        "{{ variant.name }}{{ value.name }}" => {
+{% if value.is_struct %}
+{% for attr_name, attr_type in value.struct.attributes.items() %}
+            let {{ attr_name }} = {
+                let js_val = Reflect::get(&obj, &"{{ attr_name | snake2camel }}".into())?;
+                {{ render_js_value_to_rs("js_val", attr_type) }}
+            };
+{% endfor %}
+            Ok(libparsec::{{ variant.name }}::{{ value.name }} {
+                {{ value.struct.attributes.keys() |join(',') }}
+            })
+{% elif value.is_tuple %}
+{% for attr_type in value.tuple %}
+            let x{{ loop.index }} = {
+                let js_val = Reflect::get(&obj, &"x{{ loop.index }}".into())?;
+                {{ render_js_value_to_rs("js_val", attr_type) }}
+            };
+{% endfor %}
+            Ok(libparsec::{{ variant.name }}::{{ value.name }} (
+{% for _ in value.tuple %}
+                x{{ loop.index }},
+{% endfor %}
+            ))
+{% else %}
+            Ok(libparsec::{{ variant.name }}::{{ value.name }})
+{% endif %}
+        }
+{% endfor %}
+        _ => {
+            Err(JsValue::from(TypeError::new("Object is not a {{ variant.name }}")))
+        }
+    }
+}
+{% endmacro -%}
+
+
+{%- macro render_variant_rs_to_js(variant) %}
+#[allow(dead_code)]
+fn {{ variant_rs_to_js_function_name(variant) }}(rs_obj: libparsec::{{ variant.name }}) -> Result<JsValue, JsValue> {
+    let js_obj = Object::new().into();
+{% if variant.is_error_variant %}
+    let js_display = &rs_obj.to_string();
+    Reflect::set(&js_obj, &"error".into(), &js_display.into())?;
+{% endif %}
+    match rs_obj {
+{% for value in variant.values %}
+{% if value.is_struct %}
+        libparsec::{{ variant.name }}::{{ value.name }}{ {{ value.struct.attributes.keys() |join(',') }} {{ "," if value.struct.attributes else "" }} .. } => {
+            Reflect::set(&js_obj, &"tag".into(), &"{{ variant.name }}{{ value.name }}".into())?;
+{% for attr_name, attr_type in value.struct.attributes.items() %}
+            let js_{{ attr_name }} = {{ render_rs_to_js_value(attr_name, attr_type) }};
+            Reflect::set(&js_obj, &"{{ attr_name | snake2camel }}".into(), &js_{{ attr_name }})?;
+{% endfor %}
+        }
+{% elif value.is_tuple %}
+        libparsec::{{ variant.name }}::{{ value.name }}( {% for _ in value.tuple %}x{{ loop.index }},{% endfor %} .. ) => {
+            Reflect::set(&js_obj, &"tag".into(), &"{{ value.name }}".into())?;
+{% for attr_type in value.tuple %}
+            let js_x{{ loop.index }} = {{ render_rs_to_js_value("x%s" % loop.index, attr_type) }};
+            Reflect::set(&js_obj, &"x{{ loop.index }}".into(), &js_x{{ loop.index }}.into())?;
+{% endfor %}
+        }
+{% else %}
+        libparsec::{{ variant.name }}::{{ value.name }} => {
+            Reflect::set(&js_obj, &"tag".into(), &"{{ value.name }}".into())?;
+        }
+{% endif %}
+{% endfor %}
+    }
+    Ok(js_obj)
+}
+{% endmacro -%}
+
+
+{#-
+ # Function-related macros
+ #}
+
+
+{%- macro render_async_function(meth) %}
+#[allow(non_snake_case)]
+#[wasm_bindgen]
+pub fn {{ meth.name | snake2camel }}(
+{%- for param_name, param_type in meth.params.items() -%}
+{{ param_name }}: {{ function_param_type(param_type) }}{{ "" if loop.last else ", " }}
+{%- endfor -%}
+) -> Promise {
+    future_to_promise(async move {
+{# Cook param if needed (typically for string-based types) #}
+{% for param_name, param_type in meth.params.items() %}
+        {{ render_function_param_cooking(param_name, param_type) }}
+{% endfor %}
+{# Call actual function #}
+{% if meth.return_type is none %}
+        libparsec::{{ meth.name }}(
+{%- else %}
+        let ret = libparsec::{{ meth.name }}(
+{%- endif %}
+{%- for param_name, param_type in meth.params.items() -%}
+            {{ maybe_ref(param_name, param_type) }}{{ "" if loop.last else ", " }}
+{%- endfor -%}
+        ).await;
+{# Convert return value #}
+{% if meth.return_type is none %}
+        Ok(JsValue::NULL)
+{% else %}
+        Ok({{ render_rs_to_js_value("ret", meth.return_type) }})
+{% endif %}
+    })
+}
+{% endmacro -%}
+
+
+{%- macro render_sync_function(meth) %}
+#[allow(non_snake_case)]
+#[wasm_bindgen]
+pub fn {{ meth.name | snake2camel }}(
+{%- for param_name, param_type in meth.params.items() -%}
+{{ param_name }}: {{ function_param_type(param_type) }}{{ "" if loop.last else ", " }}
+{%- endfor -%}
+) -> Promise {
+    future_to_promise(async move {
+{# Cook param if needed (typically for string-based types) #}
+{%- for param_name, param_type in meth.params.items() %}
+        {{ render_function_param_cooking(param_name, param_type) }}
+{%- endfor %}
+{# Call actual function #}
+{% if meth.return_type is none %}
+        libparsec::{{ meth.name }}(
+{%- else %}
+        let ret = libparsec::{{ meth.name }}(
+{%- endif %}
+{%- for param_name, param_type in meth.params.items() -%}
+            {{ maybe_ref(param_name, param_type) }}{{ "" if loop.last else ", " }}
+{%- endfor -%}
+        );
+{# Convert return value #}
+{% if meth.return_type is none %}
+        Ok(JsValue::NULL)
+{% else %}
+        Ok({{ render_rs_to_js_value("ret", meth.return_type) }})
+{% endif %}
+    })
+}
+{% endmacro -%}
+
+{%- macro enum_js_to_rs_function_name(enum) %}enum_{{ enum.name | pascal2snake }}_js_to_rs{% endmacro %}
+{%- macro enum_rs_to_js_function_name(enum) %}enum_{{ enum.name | pascal2snake }}_rs_to_js{% endmacro %}
+
+{%- macro render_enum_js_to_rs(enum) %}
+#[allow(dead_code)]
+fn {{ enum_js_to_rs_function_name(enum) }}(raw_value: &str) -> Result<libparsec::{{ enum.name }}, JsValue> {
+    match raw_value {
+{% for variant_name in enum.member_names %}
+        "{{ enum.name + variant_name }}" => Ok(libparsec::{{ enum.name }}::{{ variant_name }}),
+{% endfor %}
+        _ => {
+            let range_error = RangeError::new("Invalid value for enum {{ enum.name }}");
+            range_error.set_cause(&JsValue::from(raw_value));
+            Err(JsValue::from(range_error))
+        },
+    }
+}
+{% endmacro -%}
+
+{%- macro render_enum_rs_to_js(enum) %}
+#[allow(dead_code)]
+fn {{ enum_rs_to_js_function_name(enum) }}(value: libparsec::{{ enum.name }}) -> &'static str {
+    match value {
+{% for variant_name in enum.member_names %}
+        libparsec::{{ enum.name}}::{{ variant_name }} => "{{ enum.name + variant_name }}",
+{% endfor %}
+    }
+}
+{% endmacro -%}
+
+{#- End of macros #}
+
+/*
+ * /!\ Auto-generated code (see `bindings/generator`), any modification will be lost ! /!\
+ */
+{% if api.rust_code_to_inject is not none %}
+{{ api.rust_code_to_inject }}
+{% endif %}
+
+#[allow(unused_imports)]
+use js_sys::*;
+#[allow(unused_imports)]
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+#[allow(unused_imports)]
+use wasm_bindgen_futures::*;
+
+{# Enum #}
+{% for enum in api.enums %}
+// {{ enum.name }}
+
+{{ render_enum_js_to_rs(enum) }}
+
+{{ render_enum_rs_to_js(enum) }}
+
+{% endfor %}
+{# Structures #}
+{% for struct in api.structs %}
+
+// {{ struct.name }}
+
+{{ render_struct_js_to_rs(struct) }}
+
+{{ render_struct_rs_to_js(struct) }}
+{% endfor %}
+{# Variants #}
+{% for variant in api.variants %}
+
+// {{ variant.name }}
+
+{% if not variant.is_error_variant %}
+{{ render_variant_js_to_rs(variant) }}
+{% endif %}
+
+{{ render_variant_rs_to_js(variant) }}
+{% endfor %}
+
+{% for meth in api.meths %}
+
+// {{ meth.name }}
+{% if meth.is_async -%}
+{{ render_async_function(meth) }}
+{%- else -%}
+{{ render_sync_function(meth) }}
+{%- endif %}
+{% endfor %}

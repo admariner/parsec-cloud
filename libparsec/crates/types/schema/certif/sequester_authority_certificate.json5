@@ -1,0 +1,15 @@
+{
+    "label": "SequesterAuthorityCertificate",
+    "type": "sequester_authority_certificate",
+    "other_fields": [
+        // No author field here given we can only be signed by the root key
+        {
+            "name": "timestamp",
+            "type": "DateTime"
+        },
+        {
+            "name": "verify_key_der",
+            "type": "SequesterVerifyKeyDer"
+        }
+    ]
+}

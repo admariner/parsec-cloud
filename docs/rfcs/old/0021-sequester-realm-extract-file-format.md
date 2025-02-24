@@ -1,3 +1,5 @@
+<!-- Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 2016-present Scille SAS -->
+
 # Sequester - realm extract file format
 
 From [ISSUE-2461](https://github.com/Scille/parsec-cloud/issues/2461)
@@ -19,7 +21,7 @@ CREATE TABLE block (
     -- TODO: are author/size/created_on useful ?
     author INTEGER REFERENCES device (_id) NOT NULL,
     size INTEGER NOT NULL,
-    -- this field is created by the backend when inserting (unlike vlob's timestamp, see below)
+    -- this field is created by the server when inserting (unlike vlob's timestamp, see below)
     created_on TIMESTAMPTZ NOT NULL,
 
     UNIQUE(block_id)
@@ -27,7 +29,7 @@ CREATE TABLE block (
 
 CREATE TABLE vlob_atom (
     -- Compared to Parsec's datamodel, we don't store `vlob_encryption_revision` given
-    -- the vlob is provided with third party encrytion key only once at creation time
+    -- the vlob is provided with third party encryption key only once at creation time
     _id PRIMARY KEY,
     vlob_id UUID NOT NULL,
     version INTEGER NOT NULL,
@@ -38,7 +40,7 @@ CREATE TABLE vlob_atom (
     -- keep this relationship valid !
     author INTEGER REFERENCES device (_id) NOT NULL,
     -- this field is called created_on in Parsec datamodel, but it correspond to the timestamp field in the API
-    -- (the value is provided by the client when sending request and not created on backend side) so better
+    -- (the value is provided by the client when sending request and not created on server side) so better
     -- give it the better understandable name
     timestamp TIMESTAMPTZ NOT NULL,
 

@@ -1,0 +1,223 @@
+[
+    {
+        "major_versions": [
+            5
+        ],
+        "req": {
+            "cmd": "invite_claimer_step",
+            "fields": [
+                {
+                    "name": "greeting_attempt",
+                    "type": "GreetingAttemptID"
+                },
+                {
+                    "name": "claimer_step",
+                    "type": "ClaimerStep"
+                }
+            ]
+        },
+        "reps": [
+            {
+                "status": "ok",
+                "fields": [
+                    {
+                        "name": "greeter_step",
+                        "type": "GreeterStep"
+                    }
+                ]
+            },
+            {
+                // The claimer has not submitted its step yet
+                "status": "not_ready"
+            },
+            // The following statuses do exist for the greeter, but not for the claimer
+            // Instead, in those cases, the claimer would get an HTTP 410 error, defined
+            // as `InvitationAlreadyUsedOrDeleted`.
+            // {
+            //     // The invitation has already been completed
+            //     "status": "invitation_completed"
+            // },
+            // {
+            //     // The invitation has been cancelled
+            //     "status": "invitation_cancelled"
+            // },
+            {
+                // The greeter has been revoked from the organization
+                "status": "greeter_revoked"
+            },
+            {
+                // The greeter is no longer part of the allowed greeters for this invitation
+                // An example of valid case for this error happens for a user invitation,
+                // if the profile of the greeter changes from ADMIN to NORMAL after
+                // `invite_claimer_start_greeting_attempt` was called by the claimer
+                "status": "greeter_not_allowed"
+            },
+            {
+                // The greeting attempt id doesn't correspond to any existing attempt
+                "status": "greeting_attempt_not_found"
+            },
+            {
+                // The author did not join the greeting attempt
+                // This should not happen, since joining is required to get the greeting attempt ID
+                "status": "greeting_attempt_not_joined"
+            },
+            {
+                // The greeting attempt has been cancelled
+                "status": "greeting_attempt_cancelled",
+                "fields": [
+                    {
+                        "name": "origin",
+                        "type": "GreeterOrClaimer"
+                    },
+                    {
+                        "name": "timestamp",
+                        "type": "DateTime"
+                    },
+                    {
+                        "name": "reason",
+                        "type": "CancelledGreetingAttemptReason"
+                    }
+                ]
+            },
+            {
+                // The submitted step is too advanced
+                // Every step before must have been completed by both peers
+                "status": "step_too_advanced"
+            },
+            {
+                // The submitted step somehow changed during polling
+                "status": "step_mismatch"
+            }
+        ],
+        "nested_types": [
+            {
+                // GreeterStep should be identical to the one in invite_greeter_step.json5
+                "name": "GreeterStep",
+                "discriminant_field": "step",
+                "variants": [
+                    {
+                        "name": "Number0WaitPeer",
+                        "discriminant_value": "NUMBER_0_WAIT_PEER",
+                        "fields": [
+                            {
+                                "name": "public_key",
+                                "type": "PublicKey"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number1GetHashedNonce",
+                        "discriminant_value": "NUMBER_1_GET_HASHED_NONCE"
+                    },
+                    {
+                        "name": "Number2SendNonce",
+                        "discriminant_value": "NUMBER_2_SEND_NONCE",
+                        "fields": [
+                            {
+                                "name": "greeter_nonce",
+                                "type": "Bytes"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number3GetNonce",
+                        "discriminant_value": "NUMBER_3_GET_NONCE"
+                    },
+                    {
+                        "name": "Number4WaitPeerTrust",
+                        "discriminant_value": "NUMBER_4_WAIT_PEER_TRUST"
+                    },
+                    {
+                        "name": "Number5SignifyTrust",
+                        "discriminant_value": "5"
+                    },
+                    {
+                        "name": "Number6GetPayload",
+                        "discriminant_value": "NUMBER_6_GET_PAYLOAD"
+                    },
+                    {
+                        "name": "Number7SendPayload",
+                        "discriminant_value": "NUMBER_7_SEND_PAYLOAD",
+                        "fields": [
+                            {
+                                "name": "greeter_payload",
+                                "type": "Bytes"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number8WaitPeerAcknowledgment",
+                        "discriminant_value": "NUMBER_8_WAIT_PEER_ACKNOWLEDGMENT"
+                    }
+                ]
+            },
+            {
+                // ClaimerStep should be identical to the one in invite_greeter_step.json5
+                "name": "ClaimerStep",
+                "discriminant_field": "step",
+                "variants": [
+                    {
+                        "name": "Number0WaitPeer",
+                        "discriminant_value": "NUMBER_0_WAIT_PEER",
+                        "fields": [
+                            {
+                                "name": "public_key",
+                                "type": "PublicKey"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number1SendHashedNonce",
+                        "discriminant_value": "NUMBER_1_SEND_HASHED_NONCE",
+                        "fields": [
+                            {
+                                "name": "hashed_nonce",
+                                "type": "HashDigest"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number2GetNonce",
+                        "discriminant_value": "NUMBER_2_GET_NONCE"
+                    },
+                    {
+                        "name": "Number3SendNonce",
+                        "discriminant_value": "NUMBER_3_SEND_NONCE",
+                        "fields": [
+                            {
+                                "name": "claimer_nonce",
+                                "type": "Bytes"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number4SignifyTrust",
+                        "discriminant_value": "NUMBER_4_SIGNIFY_TRUST"
+                    },
+                    {
+                        "name": "Number5WaitPeerTrust",
+                        "discriminant_value": "NUMBER_5_WAIT_PEER_TRUST"
+                    },
+                    {
+                        "name": "Number6SendPayload",
+                        "discriminant_value": "NUMBER_6_SEND_PAYLOAD",
+                        "fields": [
+                            {
+                                "name": "claimer_payload",
+                                "type": "Bytes"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Number7GetPayload",
+                        "discriminant_value": "NUMBER_7_GET_PAYLOAD"
+                    },
+                    {
+                        "name": "Number8Acknowledge",
+                        "discriminant_value": "NUMBER_8_ACKNOWLEDGE"
+                    }
+                ]
+            }
+        ]
+    }
+]

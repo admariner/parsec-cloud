@@ -1,0 +1,35 @@
+{
+    "label": "ShamirRecoveryShareCertificate",
+    "type": "shamir_recovery_share_certificate",
+    "other_fields": [
+        {
+            "name": "author",
+            "type": "DeviceID"
+        },
+        {
+            "name": "timestamp",
+            "type": "DateTime"
+        },
+        {
+            /// User here must be the one owning the device used as author
+            /// (i.e. it is the user to be recovered).
+            "name": "user_id",
+            "type": "UserID"
+        },
+        {
+            /// Recipient is the user that will be able to decrypt the share.
+            "name": "recipient",
+            "type": "UserID"
+        },
+        {
+            // The actual share as `ShamirRecoveryShareData`, signed by the author
+            // then ciphered with the recipient's user key.
+            //
+            // Note: The share data is signed by the author in order to prevent
+            // attacks where a user puts someone else's share in its own certificate
+            // in order to trick a recipient user into deciphering it.
+            "name": "ciphered_share",
+            "type": "Bytes"
+        }
+    ]
+}

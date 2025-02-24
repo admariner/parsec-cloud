@@ -1,26 +1,28 @@
 #!/usr/bin/env python
-# Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
-
+from __future__ import annotations
 
 import argparse
 import re
 import sys
 from itertools import chain, dropwhile
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, TextIO, Type
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
+DIM = "\x1b[2m"
+RESET_DIM = "\x1b[22m"
 
-def extract_shabang_and_header_lines(fd):
+
+def extract_shebang_and_header_lines(fd: TextIO):
     first_line = fd.readline()
     if first_line.startswith("#!"):
-        shabang_line = first_line
+        shebang_line = first_line
         header_line = fd.readline()
     else:
-        shabang_line = ""
+        shebang_line = ""
         header_line = first_line
-    return shabang_line, header_line
+    return shebang_line, header_line
 
 
 class Licenser:
@@ -45,27 +47,40 @@ class Licenser:
     @classmethod
     def check_header(cls, file: Path) -> bool:
         with open(file, "r", encoding="utf-8") as fd:
-            shabang_line, header_line = extract_shabang_and_header_lines(fd)
+            shebang_line, header_line = extract_shebang_and_header_lines(fd)
             expected_license_line = cls.generate_license_line()
             if header_line != expected_license_line:
-                print(f"Missing {cls.SPDX_ID} header", file)
+                print(f"{DIM}{file}:{RESET_DIM} Missing {cls.SPDX_ID} header")
                 return False
 
-            for line, line_txt in enumerate(fd.readlines(), 3 if shabang_line else 2):
+            # Scan for possible additional invalid license header in the file.
+            for line, line_txt in enumerate(fd.readlines(), 3 if shebang_line else 2):
                 if cls.is_possible_license_line(line_txt):
-                    print(f"Header wrongly present at {file}:{line}")
+                    print(f"{DIM}{file}:{line}:{RESET_DIM} Header wrongly present")
                     return False
 
         return True
 
     @classmethod
     def add_header(cls, file: Path) -> bool:
+        import difflib
+
+        # Ratio at which we will consider the header line to be almost similar to the expected header line and need only replacement.
+        DIFF_MIN_RATIO = 0.75
+
         with open(file, "r", encoding="utf-8") as fd:
-            shabang_line, header_line = extract_shabang_and_header_lines(fd)
+            shebang_line, header_line = extract_shebang_and_header_lines(fd)
             expected_license_line = cls.generate_license_line()
             if header_line != expected_license_line:
-                print(f"Add missing {cls.SPDX_ID} header: {file}")
-                updated_data = f"{shabang_line}{expected_license_line}\n{header_line}{fd.read()}"
+                matcher = difflib.SequenceMatcher(None, header_line, expected_license_line)
+                if matcher.ratio() >= DIFF_MIN_RATIO:
+                    print(f"{DIM}{file}:{RESET_DIM} Replace previous header with `{cls.SPDX_ID}`")
+                    updated_data = f"{shebang_line}{expected_license_line}{fd.read()}"
+                else:
+                    print(f"{DIM}{file}:{RESET_DIM} Add missing {cls.SPDX_ID} header")
+                    updated_data = (
+                        f"{shebang_line}{expected_license_line}\n{header_line}{fd.read()}"
+                    )
                 file.write_text(updated_data, encoding="utf-8")
                 return True
 
@@ -74,11 +89,11 @@ class Licenser:
     @classmethod
     def remove_header(cls, file: Path) -> bool:
         with open(file, "r", encoding="utf-8") as fd:
-            lines = []
+            lines: list[str] = []
             need_rewrite = False
             for line in fd.readlines():
                 if cls.is_possible_license_line(line):
-                    print(f"Removing license header from {file}")
+                    print(f"{DIM}{file}:{RESET_DIM} Removing license header")
                     need_rewrite = True
                 else:
                     lines.append(line)
@@ -92,16 +107,8 @@ class Licenser:
             return False
 
 
-class AgplLicenserMixin(Licenser):
-    SPDX_ID = "AGPL-3.0"
-
-
 class BuslLicenserMixin(Licenser):
     SPDX_ID = "BUSL-1.1"
-
-    @classmethod
-    def generate_license_label(cls) -> str:
-        return f"{cls.SPDX_ID} (eventually AGPL-3.0)"
 
 
 class PythonLicenserMixin(Licenser):
@@ -128,7 +135,7 @@ class JavascriptLicenserMixin(Licenser):
         return f"// {cls.generate_license_text()}\n"
 
 
-class VueLicenserMixin(Licenser):
+class HtmlLicenserMixin(Licenser):
     @classmethod
     def generate_license_line(cls) -> str:
         return f"<!-- {cls.generate_license_text()} -->\n"
@@ -140,15 +147,19 @@ class RstLicenserMixin(Licenser):
         return f".. {cls.generate_license_text()}\n"
 
 
-class PythonAgplLicenser(AgplLicenserMixin, PythonLicenserMixin):
-    pass
+class CppLicenserMixin(Licenser):
+    @classmethod
+    def generate_license_line(cls) -> str:
+        return f"/* {cls.generate_license_text()} */\n"
+
+
+class CssLicenserMixin(Licenser):
+    @classmethod
+    def generate_license_line(cls) -> str:
+        return f"/* {cls.generate_license_text()} */\n"
 
 
 class PythonBuslLicenser(BuslLicenserMixin, PythonLicenserMixin):
-    pass
-
-
-class SqlAgplLicenser(AgplLicenserMixin, SqlLicenserMixin):
     pass
 
 
@@ -156,15 +167,7 @@ class SqlBuslLicenser(BuslLicenserMixin, SqlLicenserMixin):
     pass
 
 
-class RustAgplLicenser(AgplLicenserMixin, RustLicenserMixin):
-    pass
-
-
 class RustBuslLicenser(BuslLicenserMixin, RustLicenserMixin):
-    pass
-
-
-class JavascriptAgplLicenser(AgplLicenserMixin, JavascriptLicenserMixin):
     pass
 
 
@@ -172,19 +175,23 @@ class JavascriptBuslLicenser(BuslLicenserMixin, JavascriptLicenserMixin):
     pass
 
 
-class VueAgplLicenser(AgplLicenserMixin, VueLicenserMixin):
-    pass
-
-
-class VueBuslLicenser(BuslLicenserMixin, VueLicenserMixin):
-    pass
-
-
-class RstAgplLicenser(AgplLicenserMixin, RstLicenserMixin):
+class VueBuslLicenser(BuslLicenserMixin, HtmlLicenserMixin):
     pass
 
 
 class RstBuslLicenser(BuslLicenserMixin, RstLicenserMixin):
+    pass
+
+
+class HtmlBuslLicenser(BuslLicenserMixin, HtmlLicenserMixin):
+    pass
+
+
+class CppBuslLicenser(BuslLicenserMixin, CppLicenserMixin):
+    pass
+
+
+class CssBuslLicenser(BuslLicenserMixin, CssLicenserMixin):
     pass
 
 
@@ -204,26 +211,30 @@ class SkipLicenser(Licenser):
 
 LICENSERS_MAP = {
     # First match is used
-    re.compile(r"^parsec/backend/.*\.sql$"): SqlBuslLicenser,
-    re.compile(r"^parsec/backend/.*\.(py|pyi)"): PythonBuslLicenser,
-    re.compile(r"^parsec/core/gui/_resources_rc.py$"): SkipLicenser,
-    re.compile(r"^parsec/core/gui/ui/"): SkipLicenser,
-    re.compile(r"^oxidation/(.*/)?(target|node_modules|build|dist)/"): SkipLicenser,
-    re.compile(r"^oxidation/.*\.rs$"): RustBuslLicenser,
-    re.compile(r"^oxidation/.*\.(py|pyi)$"): PythonBuslLicenser,
-    re.compile(r"^oxidation/.*\.sql$"): SqlBuslLicenser,
-    re.compile(r"^src/.*\.rs"): RustBuslLicenser,
-    re.compile(r"^windows-icon-handler/.*\.(cpp|h)$"): RustAgplLicenser,
-    re.compile(r"^docs/.*\.(py|pyi)$"): PythonBuslLicenser,
-    re.compile(r"^docs/.*\.rst$"): RstBuslLicenser,
-    # Js project is a minefield full of node_modules/build/dist/assets etc.
-    # so we just cut simple and add copyright only to the important stuff
-    re.compile(r"^oxidation/client/src/.*\.(ts|js)$"): JavascriptBuslLicenser,
-    re.compile(r"^oxidation/client/src/.*\.vue$"): VueBuslLicenser,
+    re.compile(r"^misc/bench.py$"): SkipLicenser,
     # Special case for ourself given we contain the license headers in the source code !
     re.compile(r"^misc/license_headers.py$"): SkipLicenser,
-    re.compile(r"^.*\.(py|pyi)$"): PythonAgplLicenser,
-    re.compile(r"^.*\.sql$"): SqlAgplLicenser,
+    re.compile(r"^(.*/)?(target|node_modules|build|dist)/"): SkipLicenser,
+    re.compile(r"^client/electron/app/"): SkipLicenser,
+    re.compile(r"^(libparsec|bindings)/.*\.(py|pyi)$"): PythonBuslLicenser,
+    re.compile(r"^(libparsec|bindings)/.*\.rs$"): RustBuslLicenser,
+    re.compile(r"^(libparsec|bindings)/.*\.sql$"): SqlBuslLicenser,
+    re.compile(r"^server/parsec/.*\.sql$"): SqlBuslLicenser,
+    re.compile(r"^server/parsec/.*\.(py|pyi)"): PythonBuslLicenser,
+    re.compile(r"^server/src/.*\.rs"): RustBuslLicenser,
+    re.compile(r"^docs/.*\.(py|pyi)$"): PythonBuslLicenser,
+    re.compile(r"^docs/.*\.rst$"): RstBuslLicenser,
+    re.compile(r"^docs/.*\.md$"): HtmlBuslLicenser,
+    # Js project is a minefield full of node_modules/build/dist/assets etc.
+    # so we just cut simple and add copyright only to the important stuff
+    re.compile(r"^(client|bindings)/.*\.(ts|js)$"): JavascriptBuslLicenser,
+    re.compile(r"^client/src/.*\.(css|scss)$"): CssBuslLicenser,
+    re.compile(r"^bindings/.*\.(ts|js)\.j2$"): JavascriptBuslLicenser,
+    re.compile(r"^bindings/.*\.rs\.j2$"): RustBuslLicenser,
+    re.compile(r"^client/src/.*\.vue$"): VueBuslLicenser,
+    re.compile(r"^.*\.(py|pyi)$"): PythonBuslLicenser,
+    re.compile(r"^.*\.sql$"): SqlBuslLicenser,
+    re.compile(r"^windows-icon-handler/.*\.(cpp|h|idl)$"): CppBuslLicenser,
 }
 
 
@@ -241,6 +252,12 @@ def get_files(paths: Iterable[Path]) -> Iterator[Path]:
                 path.glob("**/*.js"),
                 path.glob("**/*.ts"),
                 path.glob("**/*.vue"),
+                path.glob("**/*.cpp"),
+                path.glob("**/*.j2"),
+                path.glob("**/*.h"),
+                path.glob("**/*.md"),
+                path.glob("**/*.idl"),
+                path.glob("**/*.scss"),
             )
         elif path.is_file():
             yield path
@@ -248,7 +265,7 @@ def get_files(paths: Iterable[Path]) -> Iterator[Path]:
             raise SystemExit(f"Error: Path `{path}` doesn't exist !")
 
 
-def get_licenser(path: Path) -> Licenser:
+def get_licenser(path: Path) -> Type[Licenser] | None:
     for regex, licenser in LICENSERS_MAP.items():
         if regex.match(path.absolute().relative_to(PROJECT_DIR).as_posix()):
             return licenser
@@ -287,20 +304,24 @@ def remove_headers(files: Iterable[Path]) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("cmd", choices=["check", "add", "remove"])
+
+    parser.add_argument("cmd", choices=["check", "add", "remove"], help="Action to perform")
+
     parser.add_argument(
         "files",
         nargs="*",
+        help="Files or directories to work on",
         type=Path,
         default=[
-            Path("parsec"),
-            Path("tests"),
-            Path("oxidation"),
-            Path("windows-icon-handler"),
-            Path("packaging"),
-            Path("misc"),
-            Path("docs"),
             Path(".github"),
+            Path("bindings"),
+            Path("cli"),
+            Path("client"),
+            Path("docs"),
+            Path("libparsec"),
+            Path("misc"),
+            Path("server"),
+            Path("windows-icon-handler"),
         ],
     )
 

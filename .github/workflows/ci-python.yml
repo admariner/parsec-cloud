@@ -1,0 +1,223 @@
+name: CI Python
+
+on:
+  workflow_call:
+    inputs:
+      style-only:
+        description: Only check the python code style (don't run test)
+        required: true
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      style-only:
+        description: Only check the python code style (don't run test)
+        required: true
+        default: false
+        type: boolean
+
+# We set `concurrency` to prevent having this workflow being run on code that is not up-to-date on a PR (a user make multiple push in a quick manner).
+# But on the main branch, we don't want that behavior.
+# Having the workflow run on each merge commit is something we would like, that could help us where a regression was made and missed by previous checks.
+#
+# For that we use `head_ref` that is only defined on `pull-request` and fallback to `run_id` (this is a counter, so it's value is unique between workflow call).
+concurrency:
+  group: ci-python-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  poetry-version: 1.5.1
+  pytest-base-args: >-
+    --log-level=DEBUG
+    --durations=10
+    --timeout=10
+    -vv
+    -x
+  postgresql-version: 14
+
+permissions:
+  contents: read
+
+jobs:
+  test-python-server:
+    # Only the server is in Python, and it is only meant to be run on Linux
+    name: "(🐧 Linux only): 🐍 Python server tests"
+    # Just a fail-safe timeout, see the fine grain per-task timeout instead
+    timeout-minutes: 60
+    # All linux jobs must run the same ubuntu version to avoid Rust caching issues !
+    # 20.04 is required to install PostgreSQL 12
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # pin v4.2.2
+        timeout-minutes: 5
+
+      - name: Retrieve runner specs
+        id: runner-specs
+        uses: ./.github/actions/system-info
+        timeout-minutes: 1
+
+      - name: Set apt mirror
+        if: (!inputs.style-only)
+        # GitHub Actions apt proxy is super unstable
+        # see https://github.com/actions/runner-images/issues/7048
+        shell: bash -eux -o pipefail {0}
+        run: |
+          COUNTRY=$(curl ipinfo.io | jq -r .country)
+          MIRROR_FILE=$(mktemp)
+          curl "http://mirrors.ubuntu.com/$COUNTRY.txt" > $MIRROR_FILE
+          (
+            # make sure there is a `\t` between URL and `priority:*` attributes
+            printf 'http://azure.archive.ubuntu.com/ubuntu	priority:1\n';
+            grep -e '^https' $MIRROR_FILE
+          ) | sudo tee /etc/apt/mirrors.txt
+          sudo sed -i 's/http:\/\/azure.archive.ubuntu.com\/ubuntu\//mirror+file:\/etc\/apt\/mirrors.txt/' /etc/apt/sources.list
+
+      - name: Configure PostgreSQL APT repository
+        if: (!inputs.style-only)
+        env:
+          POSTGRES_APT_KEY_SHA_512: df557805862cd279f40819834af14e1723b18044df9dc22bea710b6980c98cc8ed39e75ed5c9adaa1932992710f1180f0491dc9437bfd485b4aa2b75776407d4  /usr/share/keyrings/postgresql-keyring.gpg
+        shell: bash -ex -o pipefail {0}
+        run: |
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor --output /usr/share/keyrings/postgresql-keyring.gpg
+
+          printenv POSTGRES_APT_KEY_SHA_512 | sha512sum --strict -c -
+
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/postgresql.list
+
+          sudo apt-get update
+        timeout-minutes: 5
+
+      # TODO: Postgresql implementation is currently broken
+      # - name: Install PostgreSQL-${{ env.postgresql-version }}
+      #   run: |
+      #     # Retry the command until it succeed.
+      #     # We retry because sometime the APT repo configured
+      #     # by the runner seems drop the connection causing the command to fail.
+      #     until sudo apt-get -y install ${{ env.PACKAGE_TO_INSTALL }}; do
+      #       echo "Fail to install APT package retrying ...";
+      #     done
+      #   env:
+      #     PACKAGE_TO_INSTALL: >-
+      #       postgresql-${{ env.postgresql-version }}
+      #   timeout-minutes: 5
+
+      - uses: ./.github/actions/setup-python-poetry
+        id: setup-python
+        with:
+          poetry-version: ${{ env.poetry-version }}
+          project-path: ./server
+        timeout-minutes: 10
+
+      # libparsec is slow to compile, so we save it in cache and skip the
+      # compilation entirely if the Rust code hasn't changed !
+
+      # Key cache contains a hash of all the files that are used to produce _parsec.so
+      # Hence if we have a cache hit we know that there is no need for a rebuild !
+      - name: Setup cache-key
+        id: cache-key
+        run: echo "key=libparsec-${{ steps.runner-specs.outputs.os }}-${{ steps.runner-specs.outputs.release }}-${{ hashFiles('make.py', 'server/build.py', 'server/src/**', 'server/Cargo.toml', 'libparsec/**', 'rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-no-bundle-extra-shared-libraries" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Restore libparsec if Rust hasn't been modified
+        id: cache-libparsec
+        uses: actions/cache/restore@0c907a75c2c80ebcb7f088228285e798b750cf8f # pin v4.2.1
+        with:
+          key: ${{ steps.cache-key.outputs.key }}
+          path: |
+            server/parsec/_parsec.*.pyd
+            server/parsec/_parsec.*.so
+            # Note `server/parsec.libs/` is not included since we are going to build
+            # with POETRY_LIBPARSEC_BUNDLE_EXTRA_SHARED_LIBRARIES=false (see below)
+        timeout-minutes: 2
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8 # pin v1.10.1
+        if: steps.cache-libparsec.outputs.cache-hit != 'true'
+        with:
+          # We setup the cache by hand, see below
+          cache: false
+        timeout-minutes: 5
+
+      - name: Retrieve Rust cache
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # pin v2.7.7
+        if: steps.cache-libparsec.outputs.cache-hit != 'true'
+        with:
+          # Cache is limited to 10Go (and cache is ~700mo per platform !). On top of that.
+          # cache is only shared between master and the PRs (and not across PRs).
+          # So we only save the cache on master build given it's the ones that are the
+          # most likely to be reused.
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+          key: ${{ steps.runner-specs.outputs.os }}-${{ steps.runner-specs.outputs.release }}
+        timeout-minutes: 5
+
+      - name: Install python deps
+        shell: bash -ex {0}
+        run: |
+          poetry --directory ./server env info
+          if ${{ env.SKIP_EXT_BUILD }}; then export POETRY_LIBPARSEC_BUILD_STRATEGY=no_build; fi
+          python make.py python-ci-install
+
+          # Make sure POETRY_LIBPARSEC_BUNDLE_EXTRA_SHARED_LIBRARIES=false worked
+          if [ -d "./server/parsec.libs" ] && [ -n "$(ls -A ./server/parsec.libs)" ];
+          then
+            echo "::error title=Directory './server/parsec.libs' is not empty::Extra libs disabled but './server/parsec.libs/' is not empty: " ./server/parsec.libs/*
+            exit 1
+          fi
+        env:
+          SKIP_EXT_BUILD: ${{ steps.cache-libparsec.outputs.cache-hit == 'true' || inputs.style-only }}
+          # No need to bundle given we compile and run on the same machine
+          POETRY_LIBPARSEC_BUNDLE_EXTRA_SHARED_LIBRARIES: false
+        timeout-minutes: 20
+
+      - name: Install pre-commit
+        id: pre-commit
+        uses: ./.github/actions/use-pre-commit
+        with:
+          install-only: true
+
+      - name: Check python code style
+        shell: bash -eux {0}
+        run: |
+          for step in black ruff pyright ${{ !inputs.style-only && 'sqlfluff' || '' }}; do
+            python \
+              ${{ steps.pre-commit.outputs.install-path }} \
+              run \
+              $step \
+              --show-diff-on-failure \
+              --verbose \
+              --color=always \
+              ${{ steps.pre-commit.outputs.suggested-args }}
+          done
+        timeout-minutes: 10
+
+      # We only save the libparsec lib when:
+      # - We are not in a github queue branch (they're a one time use so caching won't help)
+      # - We haven't already cached it.
+      - name: Save cached libparsec to be reused on later call
+        if: >-
+          (!inputs.style-only)
+          && steps.cache-libparsec.outputs.cache-hit != 'true'
+          && !contains(github.ref, 'gh-readonly-queue')
+        uses: actions/cache/save@0c907a75c2c80ebcb7f088228285e798b750cf8f # pin v4.2.1
+        with:
+          key: ${{ steps.cache-key.outputs.key }}
+          path: |
+            server/parsec/_parsec.*.pyd
+            server/parsec/_parsec.*.so
+        timeout-minutes: 2
+
+      - name: Basic tests
+        if: (!inputs.style-only)
+        run: poetry run pytest ${{ env.pytest-base-args }} tests -n auto
+        timeout-minutes: 10
+        working-directory: server
+
+      - name: PostgreSQL tests
+        if: (!inputs.style-only)
+        env:
+          PGINSTALLATION: /usr/lib/postgresql/${{ env.postgresql-version }}/bin
+        run: poetry run pytest ${{ env.pytest-base-args }} tests -n auto --postgresql
+        timeout-minutes: 10
+        working-directory: server

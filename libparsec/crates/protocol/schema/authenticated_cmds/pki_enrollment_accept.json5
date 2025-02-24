@@ -1,0 +1,110 @@
+[
+    {
+        "major_versions": [
+            5
+        ],
+        "req": {
+            "cmd": "pki_enrollment_accept",
+            "fields": [
+                // Signature should be checked before loading.
+                {
+                    "name": "accept_payload",
+                    "type": "Bytes"
+                },
+                {
+                    "name": "accept_payload_signature",
+                    "type": "Bytes"
+                },
+                {
+                    "name": "accepter_der_x509_certificate",
+                    "type": "Bytes"
+                },
+                {
+                    "name": "enrollment_id",
+                    "type": "EnrollmentID"
+                },
+                {
+                    "name": "device_certificate",
+                    "type": "Bytes"
+                },
+                {
+                    "name": "user_certificate",
+                    "type": "Bytes"
+                },
+                // Same certificate than `device_certificate` but expunged of `device_label`.
+                {
+                    "name": "redacted_device_certificate",
+                    "type": "Bytes"
+                },
+                // Same certificate than `user_certificate` but expunged of `human_handle`.
+                {
+                    "name": "redacted_user_certificate",
+                    "type": "Bytes"
+                }
+            ]
+        },
+        "reps": [
+            {
+                "status": "ok"
+            },
+            {
+                "status": "invalid_payload_data"
+            },
+            {
+                "status": "enrollment_not_found"
+            },
+            {
+                "status": "enrollment_no_longer_available"
+            },
+            {
+                "status": "author_not_allowed"
+            },
+            {
+                "status": "active_users_limit_reached"
+            },
+            {
+                "status": "user_already_exists"
+            },
+            {
+                "status": "human_handle_already_taken"
+            },
+            {
+                "status": "invalid_certificate"
+            },
+            {
+                // Returned if the timestamp in the certificate is too far away compared
+                // to server clock.
+                "status": "timestamp_out_of_ballpark",
+                "fields": [
+                    {
+                        "name": "ballpark_client_early_offset",
+                        "type": "Float"
+                    },
+                    {
+                        "name": "ballpark_client_late_offset",
+                        "type": "Float"
+                    },
+                    {
+                        "name": "server_timestamp",
+                        "type": "DateTime"
+                    },
+                    {
+                        "name": "client_timestamp",
+                        "type": "DateTime"
+                    }
+                ]
+            },
+            {
+                // Returned if another certificate in the server has a timestamp
+                // posterior or equal to our current one.
+                "status": "require_greater_timestamp",
+                "fields": [
+                    {
+                        "name": "strictly_greater_than",
+                        "type": "DateTime"
+                    }
+                ]
+            }
+        ]
+    }
+]

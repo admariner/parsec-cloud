@@ -1,0 +1,163 @@
+[package]
+name = "libparsec_crypto"
+publish.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+vendored-openssl = ["openssl/vendored"]
+use-sodiumoxide = ["dep:sodiumoxide", "dep:libsodium-sys", "dep:openssl"]
+# In theory we should have this feature enabling optional dependencies,
+# but instead we consider use-rustcrypto as the default (see below)
+# use-rustcrypto = [
+#     "dep:argon2",
+#     "dep:blake2",
+#     "dep:crypto_box",
+#     "dep:digest",
+#     "dep:ed25519-dalek",
+#     "dep:generic-array",
+#     "dep:getrandom_01",
+#     "dep:getrandom_02",
+#     "dep:lazy_static",
+#     "dep:rand_08",
+#     "dep:rsa",
+#     "dep:sha2",
+#     "dep:x25519-dalek",
+#     "dep:xsalsa20poly1305",
+# ]
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_bytes = { workspace = true, features = ["std"] }
+hex = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+data-encoding = { workspace = true, features = ["alloc"] }
+uuid = { workspace = true }
+# `alloc` feature is required to properly erase struct containing vec/string
+zeroize = { workspace = true, features = ["alloc"] }
+
+#
+# SodiumOxide&friends stuff
+#
+
+sodiumoxide = { workspace = true, optional = true, features = ["std", "serde"] }
+libsodium-sys = { workspace = true, optional = true }
+# A word about vendoring. In Parsec, OpenSSL is used for two different things:
+# - Provide X509 support when Rust-Crypto is not used (aka "openssl-for-parsec")
+# - Provide SSL support when doing web request stuff (aka "openssl-for-reqwest")
+#
+# "openssl-for-parsec" support is why the dependence is specified here.
+# "openssl-for-reqwest", however, is only needed on Linux (reqwest uses the
+# OS's SSL implementation, which on Linux *is* OpensSSL).
+#
+# On top of that non-Linux platforms don't provide an OpenSSL we can rely on,
+# hence we must vendor it when we need "openssl-for-parsec".
+#
+# On Linux on the other hand we have the choice: to vendor or not ?
+# Not-vendoring would make things consistent with the other platform regarding
+# "openssl-for-reqwest", however it complexifies packaging (e.g. by default
+# maturin bundles extra shared libraries, which defeat the purpose of not
+# vendoring !)
+#
+# So in the end what we do is:
+# - On non-Linux platform it a no-brainer: vendor when "openssl-for-parsec"
+#   is needed (only way to have openssl) and don't vendor if it's not (openssl
+#   useless in this case)
+# - On Linux, we don't vendor in dev/ci (for faster build)
+# - For release on Linux, we expose the `vendored-openssl` to fit the packager's
+#   needs (e.g. Docker image already ships openssl so no need to vendor, wheel
+#   distributed on pypi requires vendoring to comply with manylinux)
+openssl = { workspace = true, optional = true }
+
+#
+# RustCrypto stuff
+#
+# Note that, unlike sodiumoxide related ones, those dependencies are not
+# marked optional. This is a glorious hack to ease dev workflow \o/
+#
+# The idea is that in dev we want to compile by default with rustcrypto.
+# On top of that we also want to be able to compile any crate depending on this
+# one and use rustcrypto.
+#
+# The straightforward solution would be to set a `default = ["use-rustcrypto"]`
+# feature here, however this clashes with feature unification: any crate
+# depending on this one implicitly enable `use-rustcrypto` feature unless it
+# specify `no-default = true` (which defeat the whole point of having a default !).
+#
+# So the solution is instead to consider `use-rustcrypto` is set whenever
+# `use-sodiumoxide` is not.
+# But then we have another problem: `use-rustcrypto` have itself dependencies.
+# The solution is simple: we always enable those dependencies.
+# (Hence in the end `use-rustcrypto` feature has no existence here as it is
+# just the negation of `use-sodiumoxide`)
+#
+# But what about the perf ??? Well compilation is a bit longer with `use-sodiumoxide`
+# but at link time all the rustcrypto related code is discarded given it is never used.
+
+argon2 = { workspace = true, features = [
+    "alloc",
+    "password-hash",
+    "rand",
+] } # Optional rustcrypto dep
+blake2 = { workspace = true, features = ["std"] } # Optional rustcrypto dep
+crypto_box = { workspace = true, features = [
+    "std",
+    "salsa20",
+    "rand_core",
+] } # Optional rustcrypto dep
+digest = { workspace = true, features = ["core-api"] } # Optional rustcrypto dep
+ed25519-dalek = { workspace = true, features = [
+    "std",
+    "zeroize",
+    "fast",
+    "rand_core",
+] } # Optional rustcrypto dep
+generic-array = { workspace = true, features = ["serde"] } # Optional rustcrypto dep
+lazy_static = { workspace = true } # Optional rustcrypto dep
+rsa = { workspace = true, features = ["std", "pem"] } # Optional rustcrypto dep
+sha2 = { workspace = true, features = ["std"] } # Optional rustcrypto dep
+# This is exceptionally allowed since no significant changes
+# were made from the last stable version to this major pre-release version.
+# TODO: bump to a stable version.
+x25519-dalek = { workspace = true, features = [
+    "alloc",
+    "zeroize",
+    "precomputed-tables",
+] } # Optional rustcrypto dep
+crypto_secretbox = { workspace = true, features = [
+    "alloc",
+    "getrandom",
+    "salsa20",
+] } # Optional rustcrypto dep
+# Cryptographic randomness is required for generating SecretKey, SigningKey and PrivateKey
+# `getrandom` is a dependency of `rand`, we specify it here in order  to configure its `wasm-unknown-unknown` web support (see [target] part).
+getrandom = { workspace = true }                           # Optional rustcrypto dep
+rand = { workspace = true, features = ["std", "std_rng"] } # Optional rustcrypto dep
+
+[dev-dependencies]
+pretty_assertions = { workspace = true, features = ["std", "unstable"] }
+serde_test = { workspace = true }
+hex-literal = { workspace = true }
+rmp-serde = { workspace = true }
+rstest = { workspace = true, features = ["async-timeout"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
+#
+# RustCrypto stuff
+#
+
+getrandom = { workspace = true, features = ["js"] } # Optional rustcrypto dep
+
+[target.'cfg(target_os = "macos")'.dependencies]
+openssl = { workspace = true, optional = true, features = ["vendored"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+openssl = { workspace = true, optional = true, features = ["vendored"] }

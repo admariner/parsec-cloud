@@ -1,0 +1,73 @@
+{
+    "label": "DeviceCertificate",
+    "type": "device_certificate",
+    "other_fields": [
+        {
+            "name": "purpose",
+            // Field added in Parsec v3.2
+            // Defaults to Standard if field is not present
+            "type": "NonRequiredOption<DevicePurpose>"
+        },
+        {
+            "name": "author",
+            "type": "CertificateSignerOwned"
+        },
+        {
+            "name": "timestamp",
+            "type": "DateTime"
+        },
+        {
+            "name": "user_id",
+            "type": "UserID"
+        },
+        {
+            "name": "device_id",
+            "type": "DeviceID"
+        },
+        {
+            // None in case of redacted certificate
+            "name": "device_label",
+            "type": "RequiredOption<DeviceLabel>"
+        },
+        {
+            "name": "verify_key",
+            "type": "VerifyKey"
+        },
+        {
+            "name": "algorithm",
+            "type": "SigningKeyAlgorithm"
+        }
+    ],
+    "nested_types": [
+        {
+            "name": "SigningKeyAlgorithm",
+            "variants": [
+                {
+                    "name": "Ed25519",
+                    "discriminant_value": "ED25519"
+                }
+            ]
+        },
+        {
+            "name": "DevicePurpose",
+            "variants": [
+                {
+                    "name": "Standard",
+                    "discriminant_value": "STANDARD"
+                },
+                {
+                    "name": "ShamirRecovery",
+                    "discriminant_value": "SHAMIR_RECOVERY"
+                },
+                {
+                    "name": "PassphraseRecovery",
+                    "discriminant_value": "PASSPHRASE_RECOVERY"
+                },
+                {
+                    "name": "WebAuth",
+                    "discriminant_value": "WEB_AUTH"
+                }
+            ]
+        }
+    ]
+}
