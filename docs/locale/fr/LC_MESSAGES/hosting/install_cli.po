@@ -41,8 +41,8 @@ msgstr ""
 "peut être téléchargé depuis la page des versions sur GitHub."
 
 #: ../../hosting/install_cli.rst:16
-msgid "Download Parsec CLI: `Parsec CLI v3.8.2-a.0+dev`_."
-msgstr "Téléchargez Parsec CLI: `Parsec CLI v3.8.2-a.0+dev`_."
+msgid "Download Parsec CLI: `Parsec CLI v3.8.2-a.0.dev.20564+8e301a6`_."
+msgstr "Téléchargez Parsec CLI: `Parsec CLI v3.8.2-a.0.dev.20564+8e301a6`_."
 
 #: ../../hosting/install_cli.rst:18
 msgid "Make the file executable"

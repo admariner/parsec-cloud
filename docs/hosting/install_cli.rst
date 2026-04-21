@@ -11,9 +11,9 @@ Parsec CLI for Linux. These operations can be performed from another machine.
 
 Parsec Command-Line Interface (CLI) is a standalone binary that can be downloaded from GitHub releases page.
 
-.. _Parsec CLI v3.8.2-a.0+dev: https://github.com/Scille/parsec-cloud/releases/download/v3.8.2-a.0+dev/parsec-cli_3.8.2-a.0+dev_linux-x86_64-musl
+.. _Parsec CLI v3.8.2-a.0.dev.20564+8e301a6: https://github.com/Scille/parsec-cloud/releases/download/v3.8.2-a.0.dev.20564+8e301a6/parsec-cli_3.8.2-a.0.dev.20564+8e301a6_linux-x86_64-musl
 
-1. Download Parsec CLI: `Parsec CLI v3.8.2-a.0+dev`_.
+1. Download Parsec CLI: `Parsec CLI v3.8.2-a.0.dev.20564+8e301a6`_.
 
 2. Make the file executable
 
@@ -22,16 +22,16 @@ Parsec Command-Line Interface (CLI) is a standalone binary that can be downloade
 
     .. code-block:: shell
 
-        chmod +x parsec-cli_3.8.2-a.0+dev_linux-x86_64-musl
+        chmod +x parsec-cli_3.8.2-a.0.dev.20564+8e301a6_linux-x86_64-musl
 
 3. Verify the installation by running the following command:
 
   .. code-block:: shell
 
-      ./parsec-cli_3.8.2-a.0+dev_linux-x86_64-musl --version
+      ./parsec-cli_3.8.2-a.0.dev.20564+8e301a6_linux-x86_64-musl --version
 
   The Parsec CLI version should be displayed:
 
   .. code-block::
 
-      parsec-cli 3.8.2-a.0+dev
+      parsec-cli 3.8.2-a.0.dev.20564+8e301a6
