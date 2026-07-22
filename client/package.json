@@ -1,7 +1,7 @@
 {
     "name": "client-vite",
     "private": true,
-    "version": "3.9.3-a.0+dev",
+    "version": "3.9.3-a.0.dev.20656+8c2020e",
     "type": "module",
     "license": "BUSL-1.1",
     "//megasharkLibSource": "`megashark-lib` needs its `prepare` script to run to build `dist/`, which `npm install` can't do (scripts are disabled, see `.npmrc`). So it isn't listed under `dependencies` and is installed by the `megashark:install` script (see `scripts/build_megashark_lib.cjs`) instead, run as part of the scripts that need it.",
