@@ -8,6 +8,64 @@ Parsec v3.x
 .. towncrier release notes start
 
 
+Parsec v3.9.4-a.0.dev.20672+8fb6d90 (2026-08-07)
+------------------------------------------------
+
+Features
+~~~~~~~~
+
+* CLI revamped:  - Adding 3 global arguments:   - ``--format={plain,json}``
+  control how the output data is formatted (default to ``JSON``)   -
+  ``--color={auto,always,never}`` to stylize message & data (default to
+  ``auto``)   - ``--progress={quiet,plain,spinner}`` how progress are shown
+  (default to ``spinner`` on a TTY else ``plain``) - ``device forget-local``:
+  - **BREAKING CHANGE**:     - Require to pass ``--force`` when stdout is not a
+  TTY     - Most message are shown on stderr   - Add ``--force`` flag to skip
+  confirmation - ``device list``:   - devices are listed on stdout   - message
+  indicating how much devices are found on stderr (if you want to count the
+  number of devices you could pipe output into `wc -l`) - ``workspace sync``:
+  - Most message are shown on stderr
+  (`#0000 <https://github.com/Scille/parsec-cloud/issues/0000>`__)
+
+* [CLI] Merge options ``--recipients`` and ``--weights`` of the command
+  ``shared-recovery create`` into ``--recipients``.
+  (`#9131 <https://github.com/Scille/parsec-cloud/issues/9131>`__)
+
+* Enable ODP file type in edit mode
+  (`#12110 <https://github.com/Scille/parsec-cloud/issues/12110>`__)
+
+
+Bugfixes
+~~~~~~~~
+
+* Fixed CLI server run's `--scws-web-application-private-key-content` parameter
+  incorrectly expecting a PEM content encoded in base64
+  (`#12920 <https://github.com/Scille/parsec-cloud/issues/12920>`__)
+
+* Fix the CLI ``device forget-local`` command failing with ``No such file or
+  directory`` when the device has no associated data directory (devices created
+  on old organizations).
+  (`#12807 <https://github.com/Scille/parsec-cloud/issues/12807>`__)
+
+* Fix files created in the GUI through the "New file" button not appearing right
+  away
+  (`#13002 <https://github.com/Scille/parsec-cloud/issues/13002>`__)
+
+* Fixed a bug preventing some file operations using the Finder in MacOS
+  (`#10086 <https://github.com/Scille/parsec-cloud/issues/10086>`__)
+
+* Fixed a bug in the display of active user limit in electron.
+  (`#12873 <https://github.com/Scille/parsec-cloud/issues/12873>`__)
+
+
+Miscellaneous internal changes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Added the server version in the organization information page
+  (`#5557 <https://github.com/Scille/parsec-cloud/issues/5557>`__)
+
+
+
 Parsec v3.9.3 (2026-07-24)
 --------------------------
 
