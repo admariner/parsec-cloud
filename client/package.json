@@ -84,8 +84,8 @@
         "happy-dom": "^20.11.6",
         "jiti": "^2.7.0",
         "knip": "^6.32.2",
-        "monocart-coverage-reports": "^2.12.12",
-        "otplib": "^13.4.1",
+        "monocart-coverage-reports": "^2.13.0",
+        "otplib": "^13.5.0",
         "prettier": "3.9.6",
         "prettier-plugin-organize-imports": "^4.3.0",
         "sass": "^1.103.1",
@@ -96,6 +96,6 @@
         "vite-plugin-static-copy": "^4.1.1",
         "vitest": "4.1.11",
         "vue-eslint-parser": "^10.4.1",
-        "vue-tsc": "^3.3.10"
+        "vue-tsc": "^3.3.11"
     }
 }
